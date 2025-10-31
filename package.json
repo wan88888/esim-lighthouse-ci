@@ -1,0 +1,17 @@
+{
+  "name": "esim-lighthouse-ci",
+  "version": "1.0.0",
+  "description": "Lighthouse CI tests for esimnum.com",
+  "main": "index.js",
+  "scripts": {
+    "test": "lhci autorun --config=lighthouserc.js",
+    "test:ci": "LHCI_BUILD_CONTEXT__CURRENT_HASH=github-actions lhci autorun --config=lighthouserc.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@lhci/cli": "^0.15.1"
+  }
+}

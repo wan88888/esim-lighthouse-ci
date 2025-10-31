@@ -1,0 +1,46 @@
+name: Lighthouse CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Lighthouse CI
+        run: npm install -g @lhci/cli
+
+      - name: Run Lighthouse Collect
+        run: |
+          LHCI_BUILD_CONTEXT__CURRENT_HASH=github-actions \
+          lhci collect --config=lighthouserc.js || true
+
+      - name: Run Lighthouse Upload
+        run: |
+          LHCI_BUILD_CONTEXT__CURRENT_HASH=github-actions \
+          lhci upload --config=lighthouserc.js || true
+
+      - name: Show report files
+        run: ls -l .lighthouseci
+
+      - name: Upload Lighthouse Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-report
+          path: |
+            .lighthouseci/*.html
+            .lighthouseci/*.json
