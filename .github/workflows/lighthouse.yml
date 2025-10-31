@@ -27,9 +27,20 @@ jobs:
           lhci collect --config=lighthouserc.js || true
 
       - name: Run Lighthouse Upload
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           LHCI_BUILD_CONTEXT__CURRENT_HASH=github-actions \
           lhci upload --config=lighthouserc.js || true
+
+      - name: Check report files
+        run: |
+          if [ -d ".lighthouseci" ]; then
+            echo "📁 .lighthouseci directory exists"
+            ls -lah .lighthouseci/
+          else
+            echo "⚠️ .lighthouseci directory not found"
+          fi
 
       - name: Upload Lighthouse Report
         uses: actions/upload-artifact@v4
@@ -38,3 +49,4 @@ jobs:
           path: |
             .lighthouseci/*.html
             .lighthouseci/*.json
+          if-no-files-found: warn
