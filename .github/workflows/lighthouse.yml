@@ -8,6 +8,10 @@ on:
 jobs:
   lighthouse:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
+      checks: write
 
     steps:
       - name: Checkout code
@@ -31,22 +35,28 @@ jobs:
           LHCI_GITHUB_APP_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           LHCI_BUILD_CONTEXT__CURRENT_HASH=github-actions \
-          lhci upload --config=lighthouserc.js || true
+          lhci upload --config=lighthouserc.js 2>&1 | tee upload_output.txt || true
 
-      - name: Check report files
+      - name: Extract and Display Report URL
         run: |
-          if [ -d ".lighthouseci" ]; then
-            echo "📁 .lighthouseci directory exists"
-            ls -lah .lighthouseci/
+          REPORT_URL=$(grep -oP 'https://storage\.googleapis\.com/[^\s]+\.html' upload_output.txt | head -1)
+          
+          if [ -n "$REPORT_URL" ]; then
+            echo "## 📊 Lighthouse Report" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "🔗 [View Online Report]($REPORT_URL)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Report includes averages from all runs" >> $GITHUB_STEP_SUMMARY
+            
+            echo "$REPORT_URL" > report-url.txt
+            echo "✅ Report URL: $REPORT_URL"
           else
-            echo "⚠️ .lighthouseci directory not found"
+            echo "⚠️ No report URL found"
           fi
 
-      - name: Upload Lighthouse Report
+      - name: Upload Report Link
+        if: hashFiles('report-url.txt') != ''
         uses: actions/upload-artifact@v4
         with:
-          name: lighthouse-report
-          path: |
-            .lighthouseci/*.html
-            .lighthouseci/*.json
-          if-no-files-found: warn
+          name: lighthouse-report-link
+          path: report-url.txt

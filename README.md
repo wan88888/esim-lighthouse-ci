@@ -122,14 +122,28 @@ open .lighthouseci/lhr-*.html
 
 ### GitHub Actions 报告
 
+**方式 1：查看 Summary（最简单）**
+
 1. 进入 GitHub 仓库的 Actions 页面
 2. 选择对应的工作流运行记录
-3. 在 Artifacts 部分下载 `lighthouse-report`
-4. 解压后在浏览器中打开 HTML 文件
+3. 在页面顶部的 **Summary** 部分直接点击 "View Online Report" 链接
 
-### 临时公共存储
+**方式 2：下载链接文件**
 
-测试完成后，控制台会输出一个临时公共报告链接，有效期为几天。
+在 Artifacts 部分下载 `lighthouse-report-link`（一个包含 URL 的文本文件）
+
+**在线报告特点**：
+- ✅ 包含所有运行的平均值
+- ✅ 无需下载，直接在线查看
+- ✅ 支持分享给团队成员
+- ⏱️ 链接有效期约 7 天
+
+### 临时公共存储说明
+
+报告上传到 Google Cloud Storage 的临时公共存储：
+- URL 格式：`https://storage.googleapis.com/lighthouse-infrastructure.appspot.com/reports/[ID].report.html`
+- 有效期：约 7 天
+- 包含内容：所有运行的原始数据和平均值汇总
 
 ## 📈 测试指标说明
 
