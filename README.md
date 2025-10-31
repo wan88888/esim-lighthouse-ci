@@ -44,13 +44,13 @@ npm install -g @lhci/cli
       numberOfRuns: 3,                     // 运行次数
       settings: {
         chromeFlags: '--no-sandbox',
-        preset: 'desktop',                 // 桌面模式
+        preset: 'desktop',
       },
     },
     assert: {
       assertions: {
-        'categories:performance': ['error', { minScore: 0.3 }],      // 性能最低分 30
-        'categories:accessibility': ['warn', { minScore: 0.3 }],     // 可访问性最低分 30
+        'categories:performance': ['error', { minScore: 0.3 }],
+        'categories:accessibility': ['warn', { minScore: 0.3 }],
       },
     },
     upload: {
@@ -78,8 +78,8 @@ url: [
 
 ```javascript
 assertions: {
-  'categories:performance': ['error', { minScore: 0.8 }],      // 80 分
-  'categories:accessibility': ['warn', { minScore: 0.9 }],     // 90 分
+  'categories:performance': ['error', { minScore: 0.8 }],
+  'categories:accessibility': ['warn', { minScore: 0.9 }],
   'categories:best-practices': ['warn', { minScore: 0.8 }],
   'categories:seo': ['warn', { minScore: 0.8 }],
 }
@@ -154,10 +154,42 @@ Lighthouse 会评估以下核心指标：
 1. 目标网站是否可访问
 2. 性能阈值是否设置过高
 3. 网络连接是否稳定
+4. Chrome 浏览器是否正确安装（本地运行时）
 
 ### GitHub Actions 失败
 
-工作流中的 `|| true` 确保即使测试失败，工作流也会继续执行并上传报告。检查 Actions 日志获取详细错误信息。
+#### 问题：No artifacts will be uploaded
+
+如果遇到 "No files were found with the provided path" 错误：
+
+1. **检查测试是否真正运行**: 查看 "Run Lighthouse CI" 步骤的日志
+2. **网络问题**: GitHub Actions 运行环境可能无法访问目标网站
+3. **超时问题**: 网站响应太慢导致测试超时
+
+**解决方案**：
+
+工作流已配置为：
+- 使用 `continue-on-error: true` 确保即使测试失败也继续执行
+- 在上传前检查文件是否存在
+- 只在报告文件生成时才上传 artifacts
+- 显示清晰的状态消息帮助诊断问题
+
+如果持续失败，可以：
+1. 降低性能阈值（`minScore`）
+2. 减少运行次数（`numberOfRuns`）
+3. 检查目标网站是否对 CI/CD IP 有访问限制
+
+### 本地测试成功但 CI 失败
+
+可能的原因：
+- CI 环境网络速度不同
+- CI 环境资源限制
+- 目标网站对 CI IP 地址有限流
+
+解决方法：
+1. 在 CI 中使用更宽松的阈值
+2. 考虑使用本地 Lighthouse 服务器
+3. 添加重试机制
 
 ## 📝 开发建议
 
