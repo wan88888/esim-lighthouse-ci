@@ -58,35 +58,6 @@ jobs:
             echo "report_url=" >> $GITHUB_OUTPUT
           fi
 
-      - name: Extract Lighthouse Scores
-        id: scores
-        run: |
-          echo "📁 Checking for Lighthouse files..."
-          ls -la .lighthouseci/ || echo "Directory not found"
-          
-          if [ -f ".lighthouseci/manifest.json" ]; then
-            echo "✅ manifest.json found"
-            echo "📄 File content:"
-            cat .lighthouseci/manifest.json | jq '.[0].summary' || echo "Failed to parse JSON"
-            
-            # 从 manifest.json 提取分数并转换为 0-100 范围
-            jq -r '.[0].summary | 
-              "performance=\((.performance * 100) | round)",
-              "accessibility=\((.accessibility * 100) | round)",
-              "best_practices=\((."best-practices" * 100) | round)",
-              "seo=\((.seo * 100) | round)"' \
-              .lighthouseci/manifest.json >> $GITHUB_OUTPUT
-            
-            echo "📊 Extracted scores:"
-            cat $GITHUB_OUTPUT
-          else
-            echo "⚠️ manifest.json not found, using default values"
-            echo "performance=0" >> $GITHUB_OUTPUT
-            echo "accessibility=0" >> $GITHUB_OUTPUT
-            echo "best_practices=0" >> $GITHUB_OUTPUT
-            echo "seo=0" >> $GITHUB_OUTPUT
-          fi
-
       - name: Send Feishu Notification
         if: steps.report.outputs.report_url != ''
         continue-on-error: true
@@ -101,29 +72,6 @@ jobs:
           
           # 获取北京时间
           BUILD_TIME=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
-          
-          # 获取分数
-          PERFORMANCE="${{ steps.scores.outputs.performance }}"
-          ACCESSIBILITY="${{ steps.scores.outputs.accessibility }}"
-          BEST_PRACTICES="${{ steps.scores.outputs.best_practices }}"
-          SEO="${{ steps.scores.outputs.seo }}"
-          
-          # 根据分数确定颜色图标
-          get_icon() {
-            score=$1
-            if [ "$score" -ge 90 ]; then
-              echo "🟢"
-            elif [ "$score" -ge 50 ]; then
-              echo "🟠"
-            else
-              echo "🔴"
-            fi
-          }
-          
-          PERF_ICON=$(get_icon $PERFORMANCE)
-          ACC_ICON=$(get_icon $ACCESSIBILITY)
-          BP_ICON=$(get_icon $BEST_PRACTICES)
-          SEO_ICON=$(get_icon $SEO)
           
           curl -X POST "$FEISHU_WEBHOOK_URL" \
             -H 'Content-Type: application/json' \
@@ -141,12 +89,9 @@ jobs:
                   {
                     \"tag\": \"div\",
                     \"text\": {
-                      \"content\": \"$PERF_ICON **Performance**: $PERFORMANCE\\n$ACC_ICON **Accessibility**: $ACCESSIBILITY\\n$BP_ICON **Best Practices**: $BEST_PRACTICES\\n$SEO_ICON **SEO**: $SEO\",
-                      \"tag\": \"lark_md\"
+                      \"content\": \"性能测试已完成，点击下方按钮查看详细报告\",
+                      \"tag\": \"plain_text\"
                     }
-                  },
-                  {
-                    \"tag\": \"hr\"
                   },
                   {
                     \"tag\": \"div\",
@@ -176,4 +121,4 @@ jobs:
               }
             }"
           
-          echo "✅ Feishu notification sent with scores"
+          echo "✅ Feishu notification sent"
