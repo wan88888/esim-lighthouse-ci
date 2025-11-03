@@ -58,6 +58,22 @@ jobs:
             echo "report_url=" >> $GITHUB_OUTPUT
           fi
 
+      - name: Extract Lighthouse Scores
+        id: scores
+        run: |
+          # 从 manifest.json 提取分数并转换为 0-100 范围
+          jq -r '.[0].summary | 
+            "performance=\((.performance * 100) | round)",
+            "accessibility=\((.accessibility * 100) | round)",
+            "best_practices=\((."best-practices" * 100) | round)",
+            "seo=\((.seo * 100) | round)"' \
+            .lighthouseci/manifest.json >> $GITHUB_OUTPUT 2>/dev/null || {
+            echo "performance=0" >> $GITHUB_OUTPUT
+            echo "accessibility=0" >> $GITHUB_OUTPUT
+            echo "best_practices=0" >> $GITHUB_OUTPUT
+            echo "seo=0" >> $GITHUB_OUTPUT
+          }
+
       - name: Send Feishu Notification
         if: steps.report.outputs.report_url != ''
         continue-on-error: true
@@ -69,6 +85,32 @@ jobs:
             echo "⚠️ FEISHU_WEBHOOK_URL not configured, skipping notification"
             exit 0
           fi
+          
+          # 获取北京时间
+          BUILD_TIME=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
+          
+          # 获取分数
+          PERFORMANCE="${{ steps.scores.outputs.performance }}"
+          ACCESSIBILITY="${{ steps.scores.outputs.accessibility }}"
+          BEST_PRACTICES="${{ steps.scores.outputs.best_practices }}"
+          SEO="${{ steps.scores.outputs.seo }}"
+          
+          # 根据分数确定颜色图标
+          get_icon() {
+            score=$1
+            if [ "$score" -ge 90 ]; then
+              echo "🟢"
+            elif [ "$score" -ge 50 ]; then
+              echo "🟠"
+            else
+              echo "🔴"
+            fi
+          }
+          
+          PERF_ICON=$(get_icon $PERFORMANCE)
+          ACC_ICON=$(get_icon $ACCESSIBILITY)
+          BP_ICON=$(get_icon $BEST_PRACTICES)
+          SEO_ICON=$(get_icon $SEO)
           
           curl -X POST "$FEISHU_WEBHOOK_URL" \
             -H 'Content-Type: application/json' \
@@ -86,9 +128,22 @@ jobs:
                   {
                     \"tag\": \"div\",
                     \"text\": {
-                      \"content\": \"性能测试已完成，点击下方链接查看详细报告\",
-                      \"tag\": \"plain_text\"
+                      \"content\": \"⏰ **构建时间**: $BUILD_TIME\",
+                      \"tag\": \"lark_md\"
                     }
+                  },
+                  {
+                    \"tag\": \"hr\"
+                  },
+                  {
+                    \"tag\": \"div\",
+                    \"text\": {
+                      \"content\": \"$PERF_ICON **Performance**: $PERFORMANCE\\n$ACC_ICON **Accessibility**: $ACCESSIBILITY\\n$BP_ICON **Best Practices**: $BEST_PRACTICES\\n$SEO_ICON **SEO**: $SEO\",
+                      \"tag\": \"lark_md\"
+                    }
+                  },
+                  {
+                    \"tag\": \"hr\"
                   },
                   {
                     \"tag\": \"action\",
@@ -96,7 +151,7 @@ jobs:
                       {
                         \"tag\": \"button\",
                         \"text\": {
-                          \"content\": \"🔗 查看在线报告\",
+                          \"content\": \"🔗 查看详细报告\",
                           \"tag\": \"plain_text\"
                         },
                         \"url\": \"$REPORT_URL\",
@@ -108,4 +163,4 @@ jobs:
               }
             }"
           
-          echo "✅ Feishu notification sent"
+          echo "✅ Feishu notification sent with scores"
