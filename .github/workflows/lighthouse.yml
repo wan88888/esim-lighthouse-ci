@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # 每周三晚上 24:00 (北京时间) = UTC 16:00
+    - cron: '0 16 * * 3'
 
 jobs:
   lighthouse:
@@ -38,6 +41,7 @@ jobs:
           lhci upload --config=lighthouserc.js 2>&1 | tee upload_output.txt || true
 
       - name: Display Report URL
+        id: report
         run: |
           REPORT_URL=$(grep -oP 'https://storage\.googleapis\.com/[^\s]+\.html' upload_output.txt | head -1)
           
@@ -48,6 +52,60 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "Report includes averages from all runs" >> $GITHUB_STEP_SUMMARY
             echo "✅ Report URL: $REPORT_URL"
+            echo "report_url=$REPORT_URL" >> $GITHUB_OUTPUT
           else
             echo "⚠️ No report URL found"
+            echo "report_url=" >> $GITHUB_OUTPUT
           fi
+
+      - name: Send Feishu Notification
+        if: steps.report.outputs.report_url != ''
+        continue-on-error: true
+        run: |
+          FEISHU_WEBHOOK_URL="${{ secrets.FEISHU_WEBHOOK_URL }}"
+          REPORT_URL="${{ steps.report.outputs.report_url }}"
+          
+          if [ -z "$FEISHU_WEBHOOK_URL" ]; then
+            echo "⚠️ FEISHU_WEBHOOK_URL not configured, skipping notification"
+            exit 0
+          fi
+          
+          curl -X POST "$FEISHU_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"msg_type\": \"interactive\",
+              \"card\": {
+                \"header\": {
+                  \"title\": {
+                    \"content\": \"📊 eSIM Lighthouse CI 报告\",
+                    \"tag\": \"plain_text\"
+                  },
+                  \"template\": \"blue\"
+                },
+                \"elements\": [
+                  {
+                    \"tag\": \"div\",
+                    \"text\": {
+                      \"content\": \"性能测试已完成，点击下方链接查看详细报告\",
+                      \"tag\": \"plain_text\"
+                    }
+                  },
+                  {
+                    \"tag\": \"action\",
+                    \"actions\": [
+                      {
+                        \"tag\": \"button\",
+                        \"text\": {
+                          \"content\": \"🔗 查看在线报告\",
+                          \"tag\": \"plain_text\"
+                        },
+                        \"url\": \"$REPORT_URL\",
+                        \"type\": \"primary\"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }"
+          
+          echo "✅ Feishu notification sent"

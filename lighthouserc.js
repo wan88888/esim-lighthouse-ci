@@ -4,7 +4,7 @@ module.exports = {
         url: ['https://esimnum.com/home'],
         numberOfRuns: 3,
         settings: {
-          chromeFlags: '--no-sandbox',
+          chromeFlags: '--no-sandbox --disable-dev-shm-usage --headless',
           preset: 'desktop',
         },
       },

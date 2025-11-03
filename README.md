@@ -103,8 +103,32 @@ npm run test:ci
 
 - 推送到 `main` 分支时
 - 创建 Pull Request 时
+- **每周四凌晨 00:00（北京时间）定时运行**
 
-测试完成后，可在 GitHub Actions 的 Artifacts 中下载 Lighthouse 报告。
+### 配置飞书通知
+
+要启用飞书通知功能，需要配置 Webhook：
+
+1. **创建飞书自定义机器人**
+   - 在飞书群聊中，点击「设置」→「群机器人」
+   - 选择「自定义机器人」，创建一个新机器人
+   - 复制生成的 Webhook URL
+
+2. **配置 GitHub Secret**
+   - 进入 GitHub 仓库的 Settings
+   - 选择 Secrets and variables → Actions
+   - 点击 New repository secret
+   - Name: `FEISHU_WEBHOOK_URL`
+   - Value: 粘贴飞书机器人的 Webhook URL
+   - 点击 Add secret
+
+3. **测试通知**
+   - 推送代码或等待定时任务触发
+   - 测试完成后，飞书群会收到包含报告链接的卡片消息
+
+**飞书通知内容**：
+- 📊 报告标题
+- 🔗 在线报告链接按钮（直接跳转到 Google Cloud Storage 的临时报告）
 
 ## 📊 查看报告
 
@@ -200,12 +224,42 @@ Lighthouse 会评估以下核心指标：
 2. 考虑使用本地 Lighthouse 服务器
 3. 添加重试机制
 
+## ⏰ 定时任务说明
+
+项目配置了定时任务，每周四凌晨 00:00（北京时间）自动运行 Lighthouse 测试。
+
+**修改定时时间**：
+
+编辑 `.github/workflows/lighthouse.yml` 中的 cron 表达式：
+
+```yaml
+schedule:
+  # cron 格式：分 时 日 月 周 (UTC 时间)
+  - cron: '0 16 * * 3'  # 每周四 00:00 (北京时间)
+```
+
+**常用 cron 示例**：
+
+```yaml
+# 每天凌晨 2:00 (北京时间)
+- cron: '0 18 * * *'
+
+# 每周一到周五早上 9:00 (北京时间)
+- cron: '0 1 * * 1-5'
+
+# 每月 1 号中午 12:00 (北京时间)
+- cron: '0 4 1 * *'
+```
+
+⚠️ **注意**：GitHub Actions 使用 UTC 时间，北京时间需要减去 8 小时。
+
 ## 📝 开发建议
 
 - 在重大更新前运行 Lighthouse 测试
 - 定期检查和优化低于阈值的指标
 - 根据实际情况调整 `numberOfRuns` 以平衡准确性和速度
 - 考虑添加移动端测试（修改 `preset: 'mobile'`）
+- 通过飞书通知及时了解性能变化
 
 ## 🔗 相关资源
 
