@@ -61,18 +61,31 @@ jobs:
       - name: Extract Lighthouse Scores
         id: scores
         run: |
-          # 从 manifest.json 提取分数并转换为 0-100 范围
-          jq -r '.[0].summary | 
-            "performance=\((.performance * 100) | round)",
-            "accessibility=\((.accessibility * 100) | round)",
-            "best_practices=\((."best-practices" * 100) | round)",
-            "seo=\((.seo * 100) | round)"' \
-            .lighthouseci/manifest.json >> $GITHUB_OUTPUT 2>/dev/null || {
+          echo "📁 Checking for Lighthouse files..."
+          ls -la .lighthouseci/ || echo "Directory not found"
+          
+          if [ -f ".lighthouseci/manifest.json" ]; then
+            echo "✅ manifest.json found"
+            echo "📄 File content:"
+            cat .lighthouseci/manifest.json | jq '.[0].summary' || echo "Failed to parse JSON"
+            
+            # 从 manifest.json 提取分数并转换为 0-100 范围
+            jq -r '.[0].summary | 
+              "performance=\((.performance * 100) | round)",
+              "accessibility=\((.accessibility * 100) | round)",
+              "best_practices=\((."best-practices" * 100) | round)",
+              "seo=\((.seo * 100) | round)"' \
+              .lighthouseci/manifest.json >> $GITHUB_OUTPUT
+            
+            echo "📊 Extracted scores:"
+            cat $GITHUB_OUTPUT
+          else
+            echo "⚠️ manifest.json not found, using default values"
             echo "performance=0" >> $GITHUB_OUTPUT
             echo "accessibility=0" >> $GITHUB_OUTPUT
             echo "best_practices=0" >> $GITHUB_OUTPUT
             echo "seo=0" >> $GITHUB_OUTPUT
-          }
+          fi
 
       - name: Send Feishu Notification
         if: steps.report.outputs.report_url != ''
@@ -128,7 +141,7 @@ jobs:
                   {
                     \"tag\": \"div\",
                     \"text\": {
-                      \"content\": \"⏰ **构建时间**: $BUILD_TIME\",
+                      \"content\": \"$PERF_ICON **Performance**: $PERFORMANCE\\n$ACC_ICON **Accessibility**: $ACCESSIBILITY\\n$BP_ICON **Best Practices**: $BEST_PRACTICES\\n$SEO_ICON **SEO**: $SEO\",
                       \"tag\": \"lark_md\"
                     }
                   },
@@ -138,7 +151,7 @@ jobs:
                   {
                     \"tag\": \"div\",
                     \"text\": {
-                      \"content\": \"$PERF_ICON **Performance**: $PERFORMANCE\\n$ACC_ICON **Accessibility**: $ACCESSIBILITY\\n$BP_ICON **Best Practices**: $BEST_PRACTICES\\n$SEO_ICON **SEO**: $SEO\",
+                      \"content\": \"⏰ **构建时间**: $BUILD_TIME\",
                       \"tag\": \"lark_md\"
                     }
                   },
