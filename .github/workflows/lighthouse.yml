@@ -6,7 +6,7 @@ on:
   pull_request:
   schedule:
     # 每周三晚上 24:00 (北京时间) = UTC 16:00
-    - cron: '0 16 * * 3'
+    # - cron: '0 16 * * 3'
 
 jobs:
   lighthouse:
