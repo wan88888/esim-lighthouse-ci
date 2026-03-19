@@ -5,8 +5,8 @@ on:
     branches: [main]
   pull_request:
   schedule:
-    # 每周三 06:57执行
-    - cron: '57 22 * * 2'
+    # 每周三凌晨 06:37 (北京时间) = UTC 周二 22:37
+    - cron: '37 22 * * 2'
 
 jobs:
   lighthouse:
@@ -32,6 +32,16 @@ jobs:
         run: |
           LHCI_BUILD_CONTEXT__CURRENT_HASH=github-actions \
           lhci collect --config=lighthouserc.js || true
+
+      - name: Run Lighthouse Assert
+        id: assert
+        continue-on-error: true
+        run: |
+          LHCI_BUILD_CONTEXT__CURRENT_HASH=github-actions \
+          lhci assert --config=lighthouserc.js
+          EXIT=$?
+          echo "assert_failed=$([ $EXIT -ne 0 ] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+          exit $EXIT
 
       - name: Run Lighthouse Upload
         env:
@@ -61,6 +71,8 @@ jobs:
       - name: Send Feishu Notification
         if: steps.report.outputs.report_url != ''
         continue-on-error: true
+        env:
+          ASSERT_FAILED: ${{ steps.assert.outputs.assert_failed }}
         run: |
           FEISHU_WEBHOOK_URL="${{ secrets.FEISHU_WEBHOOK_URL }}"
           REPORT_URL="${{ steps.report.outputs.report_url }}"
@@ -70,8 +82,17 @@ jobs:
             exit 0
           fi
           
-          # 获取北京时间
           BUILD_TIME=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
+          
+          if [ "$ASSERT_FAILED" = "true" ]; then
+            TITLE="⚠️ eSIM Lighthouse CI 告警"
+            TEMPLATE="red"
+            BODY="⚠️ **告警**：Performance、Accessibility、Best Practices 任一低于 95 分或 SEO 低于 100 分，**请开发及时检查！**"
+          else
+            TITLE="📊 eSIM Lighthouse CI 报告"
+            TEMPLATE="blue"
+            BODY="性能测试已完成，点击下方按钮查看详细报告"
+          fi
           
           curl -X POST "$FEISHU_WEBHOOK_URL" \
             -H 'Content-Type: application/json' \
@@ -80,17 +101,17 @@ jobs:
               \"card\": {
                 \"header\": {
                   \"title\": {
-                    \"content\": \"📊 eSIM Lighthouse CI 报告\",
+                    \"content\": \"$TITLE\",
                     \"tag\": \"plain_text\"
                   },
-                  \"template\": \"blue\"
+                  \"template\": \"$TEMPLATE\"
                 },
                 \"elements\": [
                   {
                     \"tag\": \"div\",
                     \"text\": {
-                      \"content\": \"性能测试已完成，点击下方按钮查看详细报告\",
-                      \"tag\": \"plain_text\"
+                      \"content\": \"$BODY\",
+                      \"tag\": \"lark_md\"
                     }
                   },
                   {
@@ -122,3 +143,9 @@ jobs:
             }"
           
           echo "✅ Feishu notification sent"
+
+      - name: Fail if Lighthouse scores below threshold
+        if: steps.assert.outputs.assert_failed == 'true'
+        run: |
+          echo "::error::Performance / Accessibility / Best Practices 低于 95 分或 SEO 低于 100 分，请查看报告并修复"
+          exit 1
