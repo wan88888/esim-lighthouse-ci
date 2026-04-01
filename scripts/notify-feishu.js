@@ -2,6 +2,16 @@ const fs = require('fs');
 const path = require('path');
 
 // ---------------------------------------------------------------------------
+//  告警时 @提醒的飞书联系人（为空则 @所有人）
+//  有 id  → 飞书真正 @到人，对方收到红点提醒
+//  只填 name → 卡片显示 @姓名 文字，不触发红点
+// ---------------------------------------------------------------------------
+const MENTION_CONTACTS = [
+  // { id: 'ou_xxxxxxxxxxxx', name: '张三' },
+  { name: '张三' },
+];
+
+// ---------------------------------------------------------------------------
 //  Load thresholds from lighthouserc.js — single source of truth
 // ---------------------------------------------------------------------------
 const config = require('../lighthouserc.js');
@@ -110,8 +120,8 @@ async function sendFeishuNotification() {
 
   const scoreLines = METRICS.map(m => {
     const icon = m.pass ? '🟢' : '🔴';
-    const tag = m.pass ? '' : `（阈值 ≥ ${m.threshold}）`;
-    return `${icon} **${m.label}**: ${m.score} 分${tag}`;
+    const op = m.threshold >= 100 ? '=' : '≥';
+    return `${icon} **${m.label}**: ${m.score} 分（阈值 ${op} ${m.threshold}）`;
   }).join('\n');
 
   let title, template, alertText;
@@ -123,13 +133,11 @@ async function sendFeishuNotification() {
     const failedList = failed.map(m => `${m.label}(${m.score}分)`).join('、');
 
     let mention = '<at id=all>所有人</at>';
-    try {
-      const mentionMap = JSON.parse(process.env.FEISHU_MENTION_MAP || '{}');
-      const actor = process.env.GITHUB_ACTOR;
-      if (actor && mentionMap[actor]) {
-        mention = `<at id=${mentionMap[actor].id}>${mentionMap[actor].name}</at>`;
-      }
-    } catch {}
+    if (MENTION_CONTACTS.length > 0) {
+      mention = MENTION_CONTACTS.map(u =>
+        u.id ? `<at id=${u.id}>${u.name}</at>` : `@${u.name}`
+      ).join(' ');
+    }
 
     alertText = `❌ **不达标指标**: ${failedList}\n${mention} 请及时检查代码！`;
   } else {

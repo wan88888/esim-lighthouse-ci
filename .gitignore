@@ -1,10 +1,10 @@
 # Dependencies
 node_modules/
-package-lock.json
 
 # Lighthouse CI generated files
 .lighthouseci/
 lighthouseci/
+upload_output.txt
 
 # Logs
 logs
@@ -44,4 +44,3 @@ Thumbs.db
 tmp/
 temp/
 *.tmp
-

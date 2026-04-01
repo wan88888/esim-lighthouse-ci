@@ -8,9 +8,14 @@ on:
     # 每周三凌晨 06:37 (北京时间) = UTC 周二 22:37
     - cron: '37 22 * * 2'
 
+concurrency:
+  group: lighthouse-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lighthouse:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       statuses: write
@@ -18,10 +23,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
@@ -48,6 +53,4 @@ jobs:
       - name: Analyze Scores & Notify Feishu
         env:
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
-          FEISHU_MENTION_MAP: ${{ secrets.FEISHU_MENTION_MAP }}
-          GITHUB_ACTOR: ${{ github.actor }}
         run: node scripts/notify-feishu.js
