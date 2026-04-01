@@ -198,11 +198,16 @@ function renderChart(data) {
 
   const latest = data[data.length - 1];
   if (latest.thresholds) {
-    const thresholdValues = [...new Set(Object.values(latest.thresholds))];
-    for (const t of thresholdValues) {
+    const grouped = {};
+    for (const m of METRIC_CONFIG) {
+      const t = latest.thresholds[m.key];
+      if (t == null) continue;
+      (grouped[t] ??= []).push(m.label);
+    }
+    for (const [t, names] of Object.entries(grouped)) {
       datasets.push({
-        label: `Threshold ${t}`,
-        data: Array(data.length).fill(t),
+        label: `${names.join(' / ')} 阈值 (${t} 分)`,
+        data: Array(data.length).fill(Number(t)),
         borderColor: '#475569',
         borderWidth: 1,
         borderDash: [6, 4],
@@ -251,7 +256,7 @@ function renderChart(data) {
         },
         y: {
           min: 0, max: 100,
-          ticks: { color: '#64748b', stepSize: 10, callback: v => v + '%' },
+          ticks: { color: '#64748b', stepSize: 10, callback: v => v + ' 分' },
           grid: { color: '#334155' },
         },
       },

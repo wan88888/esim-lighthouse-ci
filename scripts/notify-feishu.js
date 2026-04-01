@@ -3,12 +3,10 @@ const path = require('path');
 
 // ---------------------------------------------------------------------------
 //  告警时 @提醒的飞书联系人（为空则 @所有人）
-//  有 id  → 飞书真正 @到人，对方收到红点提醒
-//  只填 name → 卡片显示 @姓名 文字，不触发红点
+//  id: 飞书 Open ID（ou_ 开头），通过飞书管理后台或 API 调试台获取
 // ---------------------------------------------------------------------------
 const MENTION_CONTACTS = [
-  { id: 'ou_xxxxxxxxxxxx', name: '张三' },
-  // { name: '张三' },
+  // { id: 'ou_***', name: '***' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -67,6 +65,14 @@ try {
   const match = uploadOutput.match(/https:\/\/storage\.googleapis\.com\/\S+\.html/);
   if (match) reportUrl = match[0];
 } catch {}
+
+let dashboardUrl = '';
+const ghRepo = process.env.GITHUB_REPOSITORY;
+if (ghRepo) {
+  const [owner] = ghRepo.split('/');
+  const repo = ghRepo.split('/')[1];
+  dashboardUrl = `https://${owner}.github.io/${repo}/`;
+}
 
 // ---------------------------------------------------------------------------
 //  Write GitHub Step Summary
@@ -134,9 +140,7 @@ async function sendFeishuNotification() {
 
     let mention = '<at id=all>所有人</at>';
     if (MENTION_CONTACTS.length > 0) {
-      mention = MENTION_CONTACTS.map(u =>
-        u.id ? `<at id=${u.id}>${u.name}</at>` : `@${u.name}`
-      ).join(' ');
+      mention = MENTION_CONTACTS.map(u => `<at id=${u.id}>${u.name}</at>`).join(' ');
     }
 
     alertText = `❌ **不达标指标**: ${failedList}\n${mention} 请及时检查代码！`;
@@ -153,18 +157,27 @@ async function sendFeishuNotification() {
     { tag: 'div', text: { content: `⏰ **构建时间**: ${buildTime}`, tag: 'lark_md' } },
   ];
 
+  const actionButtons = [];
   if (reportUrl) {
+    actionButtons.push({
+      tag: 'button',
+      text: { content: '🔗 查看详细报告', tag: 'plain_text' },
+      url: reportUrl,
+      type: 'primary',
+    });
+  }
+  if (dashboardUrl) {
+    actionButtons.push({
+      tag: 'button',
+      text: { content: '📈 查看趋势图', tag: 'plain_text' },
+      url: dashboardUrl,
+      type: 'default',
+    });
+  }
+  if (actionButtons.length > 0) {
     elements.push(
       { tag: 'hr' },
-      {
-        tag: 'action',
-        actions: [{
-          tag: 'button',
-          text: { content: '🔗 查看详细报告', tag: 'plain_text' },
-          url: reportUrl,
-          type: 'primary',
-        }],
-      },
+      { tag: 'action', actions: actionButtons },
     );
   }
 

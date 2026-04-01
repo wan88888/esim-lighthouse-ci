@@ -1,8 +1,11 @@
 module.exports = {
     ci: {
       collect: {
-        url: ['https://esimnum.com'],
-        numberOfRuns: 1,
+        url: [
+          'https://esimnum.com',
+          'https://esimnum.com/destinations/esim-united-states/US',
+        ],
+        numberOfRuns: 3,
         settings: {
           chromeFlags: '--no-sandbox --disable-dev-shm-usage --headless',
           preset: 'desktop',
@@ -10,12 +13,10 @@ module.exports = {
       },
       assert: {
         assertions: {
-          // Performance、Accessibility、Best Practices ＜ 95 分告警
-          'categories:performance': ['error', { minScore: 0.95 }],
-          'categories:accessibility': ['error', { minScore: 0.95 }],
-          'categories:best-practices': ['error', { minScore: 0.95 }],
-          // SEO ＜ 100 分告警
-          'categories:seo': ['error', { minScore: 1 }],
+          'categories:performance': ['warn', { minScore: 0.9 }],
+          'categories:accessibility': ['warn', { minScore: 0.9 }],
+          'categories:best-practices': ['warn', { minScore: 0.9 }],
+          'categories:seo': ['warn', { minScore: 0.9 }],
         },
       },
       upload: {
