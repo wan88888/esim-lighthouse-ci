@@ -2,7 +2,7 @@ module.exports = {
     ci: {
       collect: {
         url: ['https://esimnum.com'],
-        numberOfRuns: 3,
+        numberOfRuns: 1,
         settings: {
           chromeFlags: '--no-sandbox --disable-dev-shm-usage --headless',
           preset: 'desktop',

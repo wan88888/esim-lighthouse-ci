@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: read
+      contents: write
       statuses: write
       checks: write
 
@@ -54,3 +54,28 @@ jobs:
         env:
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
         run: node scripts/notify-feishu.js
+
+      - name: Deploy Trend Dashboard
+        if: github.ref == 'refs/heads/main' || github.event_name == 'schedule'
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DEPLOY_DIR=$(mktemp -d)
+
+          git clone --branch gh-pages --single-branch --depth 1 \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" \
+            "$DEPLOY_DIR" 2>/dev/null \
+            || { cd "$DEPLOY_DIR" && git init -b gh-pages && cd -; }
+
+          node scripts/save-scores.js "$DEPLOY_DIR"
+          cp dashboard/index.html "$DEPLOY_DIR/index.html"
+
+          cd "$DEPLOY_DIR"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || {
+            git commit -m "Update Lighthouse scores $(date -u +%Y-%m-%d)"
+            git push origin gh-pages
+          }
