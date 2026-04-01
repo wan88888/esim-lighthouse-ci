@@ -33,35 +33,10 @@ jobs:
           LHCI_BUILD_CONTEXT__CURRENT_HASH=github-actions \
           lhci collect --config=lighthouserc.js || true
 
-      - name: Parse Lighthouse Scores
-        id: scores
-        run: |
-          RESULTS_DIR=".lighthouseci"
-
-          if ! ls "$RESULTS_DIR"/lhr-*.json 1>/dev/null 2>&1; then
-            echo "⚠️ No Lighthouse result files found"
-            exit 0
-          fi
-
-          PERF=$(jq -s 'map(.categories.performance.score) | add / length * 100 | round' "$RESULTS_DIR"/lhr-*.json)
-          A11Y=$(jq -s 'map(.categories.accessibility.score) | add / length * 100 | round' "$RESULTS_DIR"/lhr-*.json)
-          BP=$(jq -s 'map(.categories["best-practices"].score) | add / length * 100 | round' "$RESULTS_DIR"/lhr-*.json)
-          SEO=$(jq -s 'map(.categories.seo.score) | add / length * 100 | round' "$RESULTS_DIR"/lhr-*.json)
-
-          echo "perf=$PERF" >> $GITHUB_OUTPUT
-          echo "a11y=$A11Y" >> $GITHUB_OUTPUT
-          echo "bp=$BP" >> $GITHUB_OUTPUT
-          echo "seo=$SEO" >> $GITHUB_OUTPUT
-
-          echo "📊 Scores — Performance: $PERF, Accessibility: $A11Y, Best Practices: $BP, SEO: $SEO"
-
       - name: Run Lighthouse Assert
-        id: assert
         run: |
           LHCI_BUILD_CONTEXT__CURRENT_HASH=github-actions \
-          lhci assert --config=lighthouserc.js \
-            && echo "assert_failed=false" >> $GITHUB_OUTPUT \
-            || echo "assert_failed=true" >> $GITHUB_OUTPUT
+          lhci assert --config=lighthouserc.js || true
 
       - name: Run Lighthouse Upload
         env:
@@ -70,124 +45,9 @@ jobs:
           LHCI_BUILD_CONTEXT__CURRENT_HASH=github-actions \
           lhci upload --config=lighthouserc.js 2>&1 | tee upload_output.txt || true
 
-      - name: Display Report URL
-        id: report
-        run: |
-          REPORT_URL=$(grep -oP 'https://storage\.googleapis\.com/[^\s]+\.html' upload_output.txt | head -1)
-
-          if [ -n "$REPORT_URL" ]; then
-            echo "## 📊 Lighthouse Report" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "🔗 [View Online Report]($REPORT_URL)" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Report includes averages from all runs" >> $GITHUB_STEP_SUMMARY
-            echo "✅ Report URL: $REPORT_URL"
-            echo "report_url=$REPORT_URL" >> $GITHUB_OUTPUT
-          else
-            echo "⚠️ No report URL found"
-            echo "report_url=" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Send Feishu Notification
-        if: always() && steps.scores.outputs.perf != ''
-        continue-on-error: true
+      - name: Analyze Scores & Notify Feishu
         env:
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
           FEISHU_MENTION_MAP: ${{ secrets.FEISHU_MENTION_MAP }}
-          PERF: ${{ steps.scores.outputs.perf }}
-          A11Y: ${{ steps.scores.outputs.a11y }}
-          BP: ${{ steps.scores.outputs.bp }}
-          SEO: ${{ steps.scores.outputs.seo }}
-          REPORT_URL: ${{ steps.report.outputs.report_url }}
-          ASSERT_FAILED: ${{ steps.assert.outputs.assert_failed }}
-          ACTOR: ${{ github.actor }}
-        run: |
-          if [ -z "$FEISHU_WEBHOOK_URL" ]; then
-            echo "⚠️ FEISHU_WEBHOOK_URL not configured, skipping notification"
-            exit 0
-          fi
-
-          PERF="${PERF:-0}"; A11Y="${A11Y:-0}"; BP="${BP:-0}"; SEO="${SEO:-0}"
-          BUILD_TIME=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
-
-          if [ "$PERF" -lt 95 ]; then P_ICON="🔴"; P_TAG="（阈值 ≥ 95）"; else P_ICON="🟢"; P_TAG=""; fi
-          if [ "$A11Y" -lt 95 ]; then A_ICON="🔴"; A_TAG="（阈值 ≥ 95）"; else A_ICON="🟢"; A_TAG=""; fi
-          if [ "$BP" -lt 95 ]; then B_ICON="🔴"; B_TAG="（阈值 ≥ 95）"; else B_ICON="🟢"; B_TAG=""; fi
-          if [ "$SEO" -lt 100 ]; then S_ICON="🔴"; S_TAG="（阈值 = 100）"; else S_ICON="🟢"; S_TAG=""; fi
-
-          SCORES_TEXT=$(printf "%s **Performance**: %s 分%s\n%s **Accessibility**: %s 分%s\n%s **Best Practices**: %s 分%s\n%s **SEO**: %s 分%s" \
-            "$P_ICON" "$PERF" "$P_TAG" \
-            "$A_ICON" "$A11Y" "$A_TAG" \
-            "$B_ICON" "$BP" "$B_TAG" \
-            "$S_ICON" "$SEO" "$S_TAG")
-
-          if [ "$ASSERT_FAILED" = "true" ]; then
-            TITLE="⚠️ eSIM Lighthouse CI 告警"
-            TEMPLATE="red"
-
-            FAILED_LIST=""
-            if [ "$PERF" -lt 95 ]; then FAILED_LIST="${FAILED_LIST}Performance(${PERF}分)、"; fi
-            if [ "$A11Y" -lt 95 ]; then FAILED_LIST="${FAILED_LIST}Accessibility(${A11Y}分)、"; fi
-            if [ "$BP" -lt 95 ]; then FAILED_LIST="${FAILED_LIST}Best Practices(${BP}分)、"; fi
-            if [ "$SEO" -lt 100 ]; then FAILED_LIST="${FAILED_LIST}SEO(${SEO}分)、"; fi
-            FAILED_LIST="${FAILED_LIST%、}"
-
-            MENTION="<at id=all>所有人</at>"
-            if [ -n "$FEISHU_MENTION_MAP" ]; then
-              FEISHU_ID=$(echo "$FEISHU_MENTION_MAP" | jq -r --arg a "$ACTOR" '.[$a].id // empty' 2>/dev/null)
-              FEISHU_NAME=$(echo "$FEISHU_MENTION_MAP" | jq -r --arg a "$ACTOR" '.[$a].name // empty' 2>/dev/null)
-              if [ -n "$FEISHU_ID" ]; then
-                MENTION="<at id=${FEISHU_ID}>${FEISHU_NAME}</at>"
-              fi
-            fi
-
-            ALERT_TEXT="❌ **不达标指标**: ${FAILED_LIST}\n${MENTION} 请及时检查代码！"
-          else
-            TITLE="✅ eSIM Lighthouse CI 报告"
-            TEMPLATE="green"
-            ALERT_TEXT="🎉 所有指标均达标，表现优秀！"
-          fi
-
-          PAYLOAD=$(jq -n \
-            --arg title "$TITLE" \
-            --arg template "$TEMPLATE" \
-            --arg scores "$SCORES_TEXT" \
-            --arg alert "$ALERT_TEXT" \
-            --arg time "⏰ **构建时间**: $BUILD_TIME" \
-            --arg report_url "${REPORT_URL:-}" \
-            '{
-              msg_type: "interactive",
-              card: {
-                header: {
-                  title: { content: $title, tag: "plain_text" },
-                  template: $template
-                },
-                elements: [
-                  { tag: "div", text: { content: $scores, tag: "lark_md" } },
-                  { tag: "hr" },
-                  { tag: "div", text: { content: $alert, tag: "lark_md" } },
-                  { tag: "div", text: { content: $time, tag: "lark_md" } }
-                ] + (if $report_url != "" then [
-                  { tag: "hr" },
-                  { tag: "action", actions: [{
-                    tag: "button",
-                    text: { content: "🔗 查看详细报告", tag: "plain_text" },
-                    url: $report_url,
-                    type: "primary"
-                  }]}
-                ] else [] end)
-              }
-            }')
-
-          curl -s -X POST "$FEISHU_WEBHOOK_URL" \
-            -H 'Content-Type: application/json' \
-            -d "$PAYLOAD"
-
-          echo ""
-          echo "✅ Feishu notification sent"
-
-      - name: Fail if Lighthouse scores below threshold
-        if: steps.assert.outputs.assert_failed == 'true'
-        run: |
-          echo "::error::Lighthouse 不达标 — Performance: ${{ steps.scores.outputs.perf }}, Accessibility: ${{ steps.scores.outputs.a11y }}, Best Practices: ${{ steps.scores.outputs.bp }}, SEO: ${{ steps.scores.outputs.seo }}"
-          exit 1
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: node scripts/notify-feishu.js
