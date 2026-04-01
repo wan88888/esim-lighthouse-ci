@@ -15,5 +15,22 @@
       "best-practices": 95,
       "seo": 100
     }
+  },
+  {
+    "date": "2026-04-01T10:09:58.231Z",
+    "commit": "23a145f",
+    "trigger": "push",
+    "scores": {
+      "performance": 100,
+      "accessibility": 95,
+      "best-practices": 100,
+      "seo": 92
+    },
+    "thresholds": {
+      "performance": 95,
+      "accessibility": 95,
+      "best-practices": 95,
+      "seo": 100
+    }
   }
 ]
