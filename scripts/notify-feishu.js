@@ -177,7 +177,8 @@ async function sendFeishuNotification() {
     }),
   });
 
-  console.log(`✅ Feishu notification sent (HTTP ${resp.status})`);
+  const respBody = await resp.text();
+  console.log(`✅ Feishu notification sent (HTTP ${resp.status}): ${respBody}`);
 }
 
 // ---------------------------------------------------------------------------
