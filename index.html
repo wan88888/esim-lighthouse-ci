@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>eSIM Lighthouse CI - 趋势看板</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    min-height: 100vh;
+    padding: 24px;
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+  .header h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #f8fafc;
+    margin-bottom: 4px;
+  }
+  .header p {
+    font-size: 0.875rem;
+    color: #94a3b8;
+  }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    max-width: 800px;
+    margin: 0 auto 32px;
+  }
+
+  .card {
+    background: #1e293b;
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+    border: 1px solid #334155;
+  }
+  .card .label {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+  }
+  .card .score {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .card .threshold {
+    font-size: 0.75rem;
+    color: #64748b;
+    margin-top: 4px;
+  }
+  .card .status {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+  }
+  .pass { background: #064e3b; color: #34d399; }
+  .fail { background: #7f1d1d; color: #fca5a5; }
+  .score-green { color: #34d399; }
+  .score-red { color: #f87171; }
+
+  .chart-container {
+    max-width: 900px;
+    margin: 0 auto;
+    background: #1e293b;
+    border-radius: 12px;
+    padding: 24px;
+    border: 1px solid #334155;
+  }
+
+  .meta {
+    text-align: center;
+    margin-top: 24px;
+    font-size: 0.75rem;
+    color: #475569;
+  }
+  .meta a { color: #64748b; }
+
+  .empty-state {
+    text-align: center;
+    padding: 80px 24px;
+    color: #64748b;
+  }
+  .empty-state h2 { color: #94a3b8; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>eSIM Lighthouse CI</h1>
+  <p id="subtitle">Loading...</p>
+</div>
+
+<div id="cards" class="cards"></div>
+
+<div class="chart-container">
+  <canvas id="trendChart"></canvas>
+</div>
+
+<div class="meta" id="meta"></div>
+
+<div class="empty-state" id="empty" style="display:none">
+  <h2>No Data Yet</h2>
+  <p>Scores will appear here after the first Lighthouse CI run.</p>
+</div>
+
+<script>
+const METRIC_CONFIG = [
+  { key: 'performance',    label: 'Performance',    color: '#f97316' },
+  { key: 'accessibility',  label: 'Accessibility',  color: '#3b82f6' },
+  { key: 'best-practices', label: 'Best Practices', color: '#a855f7' },
+  { key: 'seo',            label: 'SEO',            color: '#22c55e' },
+];
+
+async function init() {
+  let data;
+  try {
+    const resp = await fetch('scores.json');
+    if (!resp.ok) throw new Error(resp.status);
+    data = await resp.json();
+  } catch {
+    document.querySelector('.chart-container').style.display = 'none';
+    document.querySelector('.cards').style.display = 'none';
+    document.getElementById('empty').style.display = 'block';
+    document.getElementById('subtitle').textContent = '';
+    return;
+  }
+
+  if (!data.length) {
+    document.querySelector('.chart-container').style.display = 'none';
+    document.getElementById('empty').style.display = 'block';
+    document.getElementById('subtitle').textContent = '';
+    return;
+  }
+
+  const latest = data[data.length - 1];
+  const latestDate = new Date(latest.date);
+  document.getElementById('subtitle').textContent =
+    `Last run: ${latestDate.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}` +
+    (latest.commit !== 'local' ? ` · ${latest.commit}` : '');
+
+  renderCards(latest);
+  renderChart(data);
+  renderMeta(data);
+}
+
+function renderCards(latest) {
+  const container = document.getElementById('cards');
+  container.innerHTML = METRIC_CONFIG.map(m => {
+    const score = latest.scores[m.key];
+    const threshold = latest.thresholds?.[m.key] ?? 0;
+    const pass = score >= threshold;
+    const op = threshold >= 100 ? '=' : '≥';
+    return `
+      <div class="card">
+        <div class="label">${m.label}</div>
+        <div class="score ${pass ? 'score-green' : 'score-red'}">${score}</div>
+        <div class="threshold">Threshold ${op} ${threshold}</div>
+        <span class="status ${pass ? 'pass' : 'fail'}">${pass ? 'PASS' : 'FAIL'}</span>
+      </div>`;
+  }).join('');
+}
+
+function renderChart(data) {
+  const labels = data.map(d => {
+    const dt = new Date(d.date);
+    return `${(dt.getMonth()+1).toString().padStart(2,'0')}/${dt.getDate().toString().padStart(2,'0')}`;
+  });
+
+  const datasets = METRIC_CONFIG.map(m => ({
+    label: m.label,
+    data: data.map(d => d.scores[m.key]),
+    borderColor: m.color,
+    backgroundColor: m.color + '1a',
+    borderWidth: 2,
+    pointRadius: data.length > 30 ? 0 : 3,
+    pointHoverRadius: 5,
+    tension: 0.3,
+    fill: false,
+  }));
+
+  const latest = data[data.length - 1];
+  if (latest.thresholds) {
+    const thresholdValues = [...new Set(Object.values(latest.thresholds))];
+    for (const t of thresholdValues) {
+      datasets.push({
+        label: `Threshold ${t}`,
+        data: Array(data.length).fill(t),
+        borderColor: '#475569',
+        borderWidth: 1,
+        borderDash: [6, 4],
+        pointRadius: 0,
+        pointHoverRadius: 0,
+        fill: false,
+      });
+    }
+  }
+
+  new Chart(document.getElementById('trendChart'), {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          labels: { color: '#94a3b8', usePointStyle: true, pointStyle: 'circle', padding: 16 },
+        },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          titleColor: '#f8fafc',
+          bodyColor: '#e2e8f0',
+          borderColor: '#334155',
+          borderWidth: 1,
+          padding: 12,
+          callbacks: {
+            title(items) {
+              const d = data[items[0].dataIndex];
+              const dt = new Date(d.date);
+              return dt.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) +
+                (d.commit !== 'local' ? `  ·  ${d.commit}` : '');
+            },
+            label(item) {
+              if (item.dataset.borderDash) return null;
+              return ` ${item.dataset.label}: ${item.raw}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: '#64748b', maxRotation: 0 },
+          grid: { color: '#1e293b' },
+        },
+        y: {
+          min: 0, max: 100,
+          ticks: { color: '#64748b', stepSize: 10, callback: v => v + '%' },
+          grid: { color: '#334155' },
+        },
+      },
+    },
+  });
+}
+
+function renderMeta(data) {
+  document.getElementById('meta').innerHTML =
+    `Total runs: ${data.length} · Data retained: last 100 runs · ` +
+    `<a href="scores.json" target="_blank">Raw JSON</a>`;
+}
+
+init();
+</script>
+</body>
+</html>
