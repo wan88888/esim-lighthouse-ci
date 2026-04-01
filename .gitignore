@@ -5,6 +5,7 @@ node_modules/
 .lighthouseci/
 lighthouseci/
 upload_output.txt
+.gh-pages-deploy/
 
 # Logs
 logs

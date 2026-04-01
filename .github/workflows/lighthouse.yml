@@ -61,12 +61,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          DEPLOY_DIR=$(mktemp -d)
+          REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+          DEPLOY_DIR="$(pwd)/.gh-pages-deploy"
+          rm -rf "$DEPLOY_DIR"
 
-          git clone --branch gh-pages --single-branch --depth 1 \
-            "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" \
-            "$DEPLOY_DIR" 2>/dev/null \
-            || { cd "$DEPLOY_DIR" && git init -b gh-pages && cd -; }
+          if ! git clone --branch gh-pages --single-branch --depth 1 "$REPO_URL" "$DEPLOY_DIR" 2>/dev/null; then
+            mkdir -p "$DEPLOY_DIR"
+            cd "$DEPLOY_DIR"
+            git init -b gh-pages
+            git remote add origin "$REPO_URL"
+            cd -
+          fi
 
           node scripts/save-scores.js "$DEPLOY_DIR"
           cp dashboard/index.html "$DEPLOY_DIR/index.html"
