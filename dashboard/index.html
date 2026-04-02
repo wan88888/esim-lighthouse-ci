@@ -31,6 +31,30 @@
     color: #94a3b8;
   }
 
+  .tabs {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  .tab {
+    padding: 8px 20px;
+    border-radius: 8px;
+    border: 1px solid #334155;
+    background: #1e293b;
+    color: #94a3b8;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+  }
+  .tab:hover { border-color: #475569; color: #e2e8f0; }
+  .tab.active {
+    background: #334155;
+    color: #f8fafc;
+    border-color: #3b82f6;
+  }
+
   .cards {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -108,6 +132,7 @@
   <p id="subtitle">Loading...</p>
 </div>
 
+<div id="tabs" class="tabs"></div>
 <div id="cards" class="cards"></div>
 
 <div class="chart-container">
@@ -129,12 +154,14 @@ const METRIC_CONFIG = [
   { key: 'seo',            label: 'SEO',            color: '#22c55e' },
 ];
 
+let rawData = [];
+let chartInstance = null;
+
 async function init() {
-  let data;
   try {
     const resp = await fetch('scores.json');
     if (!resp.ok) throw new Error(resp.status);
-    data = await resp.json();
+    rawData = await resp.json();
   } catch {
     document.querySelector('.chart-container').style.display = 'none';
     document.querySelector('.cards').style.display = 'none';
@@ -143,28 +170,75 @@ async function init() {
     return;
   }
 
-  if (!data.length) {
+  if (!rawData.length) {
     document.querySelector('.chart-container').style.display = 'none';
     document.getElementById('empty').style.display = 'block';
     document.getElementById('subtitle').textContent = '';
     return;
   }
 
-  const latest = data[data.length - 1];
+  const latest = rawData[rawData.length - 1];
   const latestDate = new Date(latest.date);
   document.getElementById('subtitle').textContent =
     `Last run: ${latestDate.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}` +
     (latest.commit !== 'local' ? ` · ${latest.commit}` : '');
 
-  renderCards(latest);
-  renderChart(data);
-  renderMeta(data);
+  const pageNames = getPageNames();
+  renderTabs(pageNames);
+  switchPage(pageNames[0]);
+  renderMeta();
 }
 
-function renderCards(latest) {
+/** Collect all unique page names across all entries, compatible with old format */
+function getPageNames() {
+  const nameSet = new Set();
+  for (const entry of rawData) {
+    if (entry.pages) {
+      Object.keys(entry.pages).forEach(k => nameSet.add(k));
+    } else if (entry.scores) {
+      nameSet.add('default');
+    }
+  }
+  return [...nameSet];
+}
+
+/** Get scores for a specific page from an entry (backward-compatible) */
+function getPageScores(entry, pageName) {
+  if (entry.pages && entry.pages[pageName]) return entry.pages[pageName];
+  if (pageName === 'default' && entry.scores) return entry.scores;
+  return null;
+}
+
+function renderTabs(pageNames) {
+  const container = document.getElementById('tabs');
+  if (pageNames.length <= 1 && pageNames[0] === 'default') {
+    container.style.display = 'none';
+    return;
+  }
+  container.innerHTML = pageNames.map((name, i) =>
+    `<div class="tab${i === 0 ? ' active' : ''}" data-page="${name}">${name}</div>`
+  ).join('');
+  container.addEventListener('click', e => {
+    const tab = e.target.closest('.tab');
+    if (!tab) return;
+    container.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    switchPage(tab.dataset.page);
+  });
+}
+
+function switchPage(pageName) {
+  const latest = rawData[rawData.length - 1];
+  renderCards(latest, pageName);
+  renderChart(pageName);
+}
+
+function renderCards(latest, pageName) {
+  const scores = getPageScores(latest, pageName);
   const container = document.getElementById('cards');
+  if (!scores) { container.innerHTML = ''; return; }
   container.innerHTML = METRIC_CONFIG.map(m => {
-    const score = latest.scores[m.key];
+    const score = scores[m.key] ?? 0;
     const threshold = latest.thresholds?.[m.key] ?? 0;
     const pass = score >= threshold;
     const op = threshold >= 100 ? '=' : '≥';
@@ -178,26 +252,30 @@ function renderCards(latest) {
   }).join('');
 }
 
-function renderChart(data) {
-  const labels = data.map(d => {
+function renderChart(pageName) {
+  const filtered = rawData.filter(d => getPageScores(d, pageName));
+  const labels = filtered.map(d => {
     const dt = new Date(d.date);
     return `${(dt.getMonth()+1).toString().padStart(2,'0')}/${dt.getDate().toString().padStart(2,'0')}`;
   });
 
   const datasets = METRIC_CONFIG.map(m => ({
     label: m.label,
-    data: data.map(d => d.scores[m.key]),
+    data: filtered.map(d => {
+      const s = getPageScores(d, pageName);
+      return s?.[m.key] ?? null;
+    }),
     borderColor: m.color,
     backgroundColor: m.color + '1a',
     borderWidth: 2,
-    pointRadius: data.length > 30 ? 0 : 3,
+    pointRadius: filtered.length > 30 ? 0 : 3,
     pointHoverRadius: 5,
     tension: 0.3,
     fill: false,
   }));
 
-  const latest = data[data.length - 1];
-  if (latest.thresholds) {
+  const latest = filtered[filtered.length - 1];
+  if (latest?.thresholds) {
     const grouped = {};
     for (const m of METRIC_CONFIG) {
       const t = latest.thresholds[m.key];
@@ -207,7 +285,7 @@ function renderChart(data) {
     for (const [t, names] of Object.entries(grouped)) {
       datasets.push({
         label: `${names.join(' / ')} 阈值 (${t} 分)`,
-        data: Array(data.length).fill(Number(t)),
+        data: Array(filtered.length).fill(Number(t)),
         borderColor: '#475569',
         borderWidth: 1,
         borderDash: [6, 4],
@@ -218,7 +296,9 @@ function renderChart(data) {
     }
   }
 
-  new Chart(document.getElementById('trendChart'), {
+  if (chartInstance) chartInstance.destroy();
+
+  chartInstance = new Chart(document.getElementById('trendChart'), {
     type: 'line',
     data: { labels, datasets },
     options: {
@@ -237,7 +317,7 @@ function renderChart(data) {
           padding: 12,
           callbacks: {
             title(items) {
-              const d = data[items[0].dataIndex];
+              const d = filtered[items[0].dataIndex];
               const dt = new Date(d.date);
               return dt.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) +
                 (d.commit !== 'local' ? `  ·  ${d.commit}` : '');
@@ -264,9 +344,9 @@ function renderChart(data) {
   });
 }
 
-function renderMeta(data) {
+function renderMeta() {
   document.getElementById('meta').innerHTML =
-    `Total runs: ${data.length} · Data retained: last 100 runs · ` +
+    `Total runs: ${rawData.length} · Data retained: last 100 runs · ` +
     `<a href="scores.json" target="_blank">Raw JSON</a>`;
 }
 

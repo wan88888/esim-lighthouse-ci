@@ -50,37 +50,29 @@ jobs:
           LHCI_BUILD_CONTEXT__CURRENT_HASH=github-actions \
           lhci upload --config=lighthouserc.js 2>&1 | tee upload_output.txt || true
 
+      - name: Fetch Score History
+        run: |
+          git fetch origin gh-pages --depth=1 2>/dev/null && \
+            git show origin/gh-pages:scores.json > scores_history.json 2>/dev/null || \
+            echo '[]' > scores_history.json
+
       - name: Analyze Scores & Notify Feishu
         env:
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
         run: node scripts/notify-feishu.js
 
-      - name: Deploy Trend Dashboard
+      - name: Prepare Dashboard Data
         if: always() && (github.ref == 'refs/heads/main' || github.event_name == 'schedule')
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
-          DEPLOY_DIR="$(pwd)/.gh-pages-deploy"
-          rm -rf "$DEPLOY_DIR"
+          mkdir -p .dashboard-build
+          cp scores_history.json .dashboard-build/scores.json
+          node scripts/save-scores.js .dashboard-build
+          cp dashboard/index.html .dashboard-build/index.html
 
-          if ! git clone --branch gh-pages --single-branch --depth 1 "$REPO_URL" "$DEPLOY_DIR" 2>/dev/null; then
-            mkdir -p "$DEPLOY_DIR"
-            cd "$DEPLOY_DIR"
-            git init -b gh-pages
-            git remote add origin "$REPO_URL"
-            cd -
-          fi
-
-          node scripts/save-scores.js "$DEPLOY_DIR"
-          cp dashboard/index.html "$DEPLOY_DIR/index.html"
-
-          cd "$DEPLOY_DIR"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --cached --quiet || {
-            git commit -m "Update Lighthouse scores $(date -u +%Y-%m-%d)"
-            git push origin gh-pages
-          }
+      - name: Deploy Dashboard
+        if: always() && (github.ref == 'refs/heads/main' || github.event_name == 'schedule')
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: .dashboard-build
+          commit_message: 'Update Lighthouse scores'

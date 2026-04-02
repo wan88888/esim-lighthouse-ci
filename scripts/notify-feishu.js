@@ -1,5 +1,5 @@
 const fs = require('fs');
-const path = require('path');
+const { parse, shortUrl } = require('./lib/lhr-parser');
 
 // ---------------------------------------------------------------------------
 //  告警时 @提醒的飞书联系人（为空则 @所有人）
@@ -10,100 +10,85 @@ const MENTION_CONTACTS = [
 ];
 
 // ---------------------------------------------------------------------------
-//  Load thresholds from lighthouserc.js — single source of truth
+//  Parse Lighthouse results — grouped by page URL
 // ---------------------------------------------------------------------------
-const config = require('../lighthouserc.js');
-const assertions = config.ci.assert.assertions;
+const { pages, hasFailed } = parse();
 
-const METRICS = [
-  { key: 'performance',    label: 'Performance',    assertion: 'categories:performance' },
-  { key: 'accessibility',  label: 'Accessibility',  assertion: 'categories:accessibility' },
-  { key: 'best-practices', label: 'Best Practices', assertion: 'categories:best-practices' },
-  { key: 'seo',            label: 'SEO',            assertion: 'categories:seo' },
-];
-
-for (const m of METRICS) {
-  const rule = assertions[m.assertion];
-  m.threshold = Math.round((rule?.[1]?.minScore ?? 0) * 100);
-}
-
-// ---------------------------------------------------------------------------
-//  Parse Lighthouse results (.lighthouseci/lhr-*.json)
-// ---------------------------------------------------------------------------
-const RESULTS_DIR = path.resolve('.lighthouseci');
-let resultFiles = [];
-try {
-  resultFiles = fs.readdirSync(RESULTS_DIR)
-    .filter(f => f.startsWith('lhr-') && f.endsWith('.json'))
-    .map(f => path.join(RESULTS_DIR, f));
-} catch {}
-
-if (resultFiles.length === 0) {
+if (pages.length === 0) {
   console.log('⚠️ No Lighthouse result files found');
   process.exit(0);
 }
 
-const results = resultFiles.map(f => JSON.parse(fs.readFileSync(f, 'utf8')));
-
-for (const m of METRICS) {
-  const avg = results.reduce((sum, r) => sum + (r.categories?.[m.key]?.score ?? 0), 0) / results.length;
-  m.score = Math.round(avg * 100);
-  m.pass = m.score >= m.threshold;
-}
-
-const failed = METRICS.filter(m => !m.pass);
-const hasFailed = failed.length > 0;
-
-console.log('📊 Scores:', METRICS.map(m => `${m.label}: ${m.score}`).join(', '));
-
 // ---------------------------------------------------------------------------
-//  Extract report URL from lhci upload output
+//  Load last-run scores from history for delta calculation
 // ---------------------------------------------------------------------------
-let reportUrl = '';
+let prevPageScores = {};
 try {
-  const uploadOutput = fs.readFileSync('upload_output.txt', 'utf8');
-  const match = uploadOutput.match(/https:\/\/storage\.googleapis\.com\/\S+\.html/);
-  if (match) reportUrl = match[0];
+  const history = JSON.parse(fs.readFileSync('scores_history.json', 'utf8'));
+  if (history.length > 0) {
+    const last = history[history.length - 1];
+    if (last.pages) {
+      prevPageScores = last.pages;
+    } else if (last.scores) {
+      prevPageScores = { default: last.scores };
+    }
+  }
 } catch {}
 
+for (const page of pages) {
+  const prev = prevPageScores[page.shortUrl] || {};
+  for (const m of page.metrics) {
+    const prevScore = prev[m.key];
+    m.delta = prevScore != null ? m.score - prevScore : null;
+  }
+  console.log(`📊 [${page.shortUrl}]`, page.metrics.map(m => {
+    const d = m.delta != null ? ` (${m.delta >= 0 ? '+' : ''}${m.delta})` : '';
+    return `${m.label}: ${m.score}${d}`;
+  }).join(', '));
+}
+
+// ---------------------------------------------------------------------------
+//  Dashboard URL
+// ---------------------------------------------------------------------------
 let dashboardUrl = '';
 const ghRepo = process.env.GITHUB_REPOSITORY;
 if (ghRepo) {
-  const [owner] = ghRepo.split('/');
-  const repo = ghRepo.split('/')[1];
+  const [owner, repo] = ghRepo.split('/');
   dashboardUrl = `https://${owner}.github.io/${repo}/`;
 }
 
 // ---------------------------------------------------------------------------
-//  Write GitHub Step Summary
+//  Write GitHub Step Summary (per-page)
 // ---------------------------------------------------------------------------
 const summaryPath = process.env.GITHUB_STEP_SUMMARY;
 if (summaryPath) {
-  const rows = METRICS.map(m =>
-    `| ${m.label} | ${m.score}% | ≥ ${m.threshold}% | ${m.pass ? '✅' : '❌'} |`
-  ).join('\n');
-
-  let summary = '## 📊 Lighthouse Scores\n\n'
-    + '| Metric | Score | Threshold | Status |\n'
-    + '|--------|-------|-----------|--------|\n'
-    + rows + '\n';
-  if (reportUrl) summary += `\n🔗 [View Online Report](${reportUrl})\n`;
-
+  let summary = '## 📊 Lighthouse Scores\n\n';
+  for (const page of pages) {
+    summary += `### ${page.shortUrl}\n\n`
+      + '| Metric | Score | Threshold | Status |\n'
+      + '|--------|-------|-----------|--------|\n'
+      + page.metrics.map(m =>
+          `| ${m.label} | ${m.score}% | ≥ ${m.threshold}% | ${m.pass ? '✅' : '❌'} |`
+        ).join('\n') + '\n';
+    if (page.reportUrl) summary += `\n🔗 [View Report](${page.reportUrl})\n`;
+    summary += '\n';
+  }
   fs.appendFileSync(summaryPath, summary);
 }
 
 // ---------------------------------------------------------------------------
-//  Write GitHub Outputs (for downstream steps if needed)
+//  Write GitHub Outputs
 // ---------------------------------------------------------------------------
 const outputPath = process.env.GITHUB_OUTPUT;
 if (outputPath) {
+  const first = pages[0]?.metrics;
   fs.appendFileSync(outputPath, [
-    `perf=${METRICS[0].score}`,
-    `a11y=${METRICS[1].score}`,
-    `bp=${METRICS[2].score}`,
-    `seo=${METRICS[3].score}`,
+    `perf=${first?.[0]?.score ?? 0}`,
+    `a11y=${first?.[1]?.score ?? 0}`,
+    `bp=${first?.[2]?.score ?? 0}`,
+    `seo=${first?.[3]?.score ?? 0}`,
     `has_failure=${hasFailed}`,
-    `report_url=${reportUrl}`,
+    `report_url=${pages[0]?.reportUrl ?? ''}`,
   ].join('\n') + '\n');
 }
 
@@ -124,60 +109,74 @@ async function sendFeishuNotification() {
     hour12: false,
   });
 
-  const scoreLines = METRICS.map(m => {
-    const icon = m.pass ? '🟢' : '🔴';
-    const op = m.threshold >= 100 ? '=' : '≥';
-    return `${icon} **${m.label}**: ${m.score} 分（阈值 ${op} ${m.threshold}）`;
-  }).join('\n');
-
-  let title, template, alertText;
-
+  let title, template;
   if (hasFailed) {
     title = '⚠️ eSIM Lighthouse CI 告警';
     template = 'red';
+  } else {
+    title = '✅ eSIM Lighthouse CI 报告';
+    template = 'green';
+  }
 
-    const failedList = failed.map(m => `${m.label}(${m.score}分)`).join('、');
+  const elements = [];
+
+  // --- Per-page score sections ---
+  for (const page of pages) {
+    const scoreLines = page.metrics.map(m => {
+      const icon = m.pass ? '🟢' : '🔴';
+      const op = m.threshold >= 100 ? '=' : '≥';
+      let deltaStr = '';
+      if (m.delta != null && m.delta !== 0) {
+        deltaStr = m.delta > 0 ? ` 🔺+${m.delta}` : ` 🔻${m.delta}`;
+      }
+      return `${icon} **${m.label}**: ${m.score} 分${deltaStr}（阈值 ${op} ${m.threshold}）`;
+    }).join('\n');
+
+    let section = `📄 **${page.shortUrl}**\n${scoreLines}`;
+    if (page.reportUrl) {
+      section += `\n[🔗 查看报告](${page.reportUrl})`;
+    }
+
+    elements.push({ tag: 'div', text: { content: section, tag: 'lark_md' } });
+    elements.push({ tag: 'hr' });
+  }
+
+  // --- Alert / summary section ---
+  let alertText;
+  if (hasFailed) {
+    const failedByPage = pages
+      .filter(p => p.failed.length > 0)
+      .map(p => {
+        const items = p.failed.map(m => `${m.label}(${m.score}分)`).join('、');
+        return `${p.shortUrl} — ${items}`;
+      })
+      .join('\n');
 
     let mention = '<at id=all>所有人</at>';
     if (MENTION_CONTACTS.length > 0) {
       mention = MENTION_CONTACTS.map(u => `<at id=${u.id}>${u.name}</at>`).join(' ');
     }
-
-    alertText = `❌ **不达标指标**: ${failedList}\n${mention} 请及时检查代码！`;
+    alertText = `❌ **不达标指标**:\n${failedByPage}\n${mention} 请及时检查代码！`;
   } else {
-    title = '✅ eSIM Lighthouse CI 报告';
-    template = 'green';
-    alertText = '🎉 所有指标均达标，表现优秀！';
+    alertText = '🎉 所有页面指标均达标，表现优秀！';
   }
 
-  const elements = [
-    { tag: 'div', text: { content: scoreLines, tag: 'lark_md' } },
-    { tag: 'hr' },
-    { tag: 'div', text: { content: alertText, tag: 'lark_md' } },
-    { tag: 'div', text: { content: `⏰ **构建时间**: ${buildTime}`, tag: 'lark_md' } },
-  ];
+  elements.push({ tag: 'div', text: { content: alertText, tag: 'lark_md' } });
+  elements.push({ tag: 'div', text: { content: `⏰ **构建时间**: ${buildTime}`, tag: 'lark_md' } });
 
-  const actionButtons = [];
-  if (reportUrl) {
-    actionButtons.push({
-      tag: 'button',
-      text: { content: '🔗 查看详细报告', tag: 'plain_text' },
-      url: reportUrl,
-      type: 'primary',
-    });
-  }
+  // --- Action buttons ---
   if (dashboardUrl) {
-    actionButtons.push({
-      tag: 'button',
-      text: { content: '📈 查看趋势图', tag: 'plain_text' },
-      url: dashboardUrl,
-      type: 'default',
-    });
-  }
-  if (actionButtons.length > 0) {
     elements.push(
       { tag: 'hr' },
-      { tag: 'action', actions: actionButtons },
+      {
+        tag: 'action',
+        actions: [{
+          tag: 'button',
+          text: { content: '📈 查看趋势图', tag: 'plain_text' },
+          url: dashboardUrl,
+          type: 'default',
+        }],
+      },
     );
   }
 
@@ -203,7 +202,8 @@ async function main() {
   });
 
   if (hasFailed) {
-    console.error(`\n❌ Lighthouse check failed — ${failed.map(m => `${m.label}: ${m.score}/${m.threshold}`).join(', ')}`);
+    const allFailed = pages.flatMap(p => p.failed.map(m => `${p.shortUrl} ${m.label}: ${m.score}/${m.threshold}`));
+    console.error(`\n❌ Lighthouse check failed — ${allFailed.join(', ')}`);
     process.exit(1);
   }
 

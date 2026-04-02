@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { parse, thresholds } = require('./lib/lhr-parser');
 
 const MAX_ENTRIES = 100;
 
@@ -9,65 +10,31 @@ if (!deployDir) {
   process.exit(1);
 }
 
-// ---------------------------------------------------------------------------
-//  Load thresholds from lighthouserc.js (same source as notify-feishu.js)
-// ---------------------------------------------------------------------------
-const config = require('../lighthouserc.js');
-const assertions = config.ci.assert.assertions;
-
-const METRICS = [
-  { key: 'performance',    assertion: 'categories:performance' },
-  { key: 'accessibility',  assertion: 'categories:accessibility' },
-  { key: 'best-practices', assertion: 'categories:best-practices' },
-  { key: 'seo',            assertion: 'categories:seo' },
-];
-
-for (const m of METRICS) {
-  const rule = assertions[m.assertion];
-  m.threshold = Math.round((rule?.[1]?.minScore ?? 0) * 100);
-}
-
-// ---------------------------------------------------------------------------
-//  Parse Lighthouse results
-// ---------------------------------------------------------------------------
-const RESULTS_DIR = path.resolve('.lighthouseci');
-let resultFiles = [];
-try {
-  resultFiles = fs.readdirSync(RESULTS_DIR)
-    .filter(f => f.startsWith('lhr-') && f.endsWith('.json'))
-    .map(f => path.join(RESULTS_DIR, f));
-} catch {}
-
-if (resultFiles.length === 0) {
+const { pages } = parse();
+if (pages.length === 0) {
   console.log('⚠️ No Lighthouse result files found, skipping score save');
   process.exit(0);
 }
 
-const results = resultFiles.map(f => JSON.parse(fs.readFileSync(f, 'utf8')));
-
-const scores = {};
-for (const m of METRICS) {
-  const avg = results.reduce((sum, r) => sum + (r.categories?.[m.key]?.score ?? 0), 0) / results.length;
-  scores[m.key] = Math.round(avg * 100);
+// Build a per-page scores map: { "esimnum.com": { performance: 100, ... }, ... }
+const pageScores = {};
+for (const page of pages) {
+  const scores = {};
+  for (const m of page.metrics) scores[m.key] = m.score;
+  pageScores[page.shortUrl] = scores;
 }
 
-// ---------------------------------------------------------------------------
-//  Read existing history and append
-// ---------------------------------------------------------------------------
 const scoresFile = path.join(deployDir, 'scores.json');
 let history = [];
 try {
   history = JSON.parse(fs.readFileSync(scoresFile, 'utf8'));
 } catch {}
 
-const thresholds = {};
-for (const m of METRICS) thresholds[m.key] = m.threshold;
-
 history.push({
   date: new Date().toISOString(),
   commit: (process.env.GITHUB_SHA || 'local').slice(0, 7),
   trigger: process.env.GITHUB_EVENT_NAME || 'manual',
-  scores,
+  pages: pageScores,
   thresholds,
 });
 
