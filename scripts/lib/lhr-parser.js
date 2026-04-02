@@ -24,8 +24,15 @@ function median(arr) {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
+function normalizeUrl(url) {
+  return url.endsWith('/') ? url.slice(0, -1) : url;
+}
+
 function displayName(url) {
-  if (pageNames[url]) return pageNames[url];
+  const norm = normalizeUrl(url);
+  for (const [key, name] of Object.entries(pageNames)) {
+    if (normalizeUrl(key) === norm) return name;
+  }
   try {
     const u = new URL(url);
     return u.pathname === '/' ? u.hostname : u.hostname + u.pathname;
@@ -64,12 +71,32 @@ function parse() {
     pageMap.get(url).indices.push(idx);
   });
 
-  // Extract ALL report URLs (order matches result files)
-  let reportUrls = [];
+  // Load report URL mapping — prefer links.json (written by lhci upload),
+  // fall back to parsing upload_output.txt
+  let linksMap = {};
   try {
-    const output = fs.readFileSync('upload_output.txt', 'utf8');
-    reportUrls = [...output.matchAll(/https:\/\/storage\.googleapis\.com\/\S+\.html/g)].map(m => m[0]);
-  } catch {}
+    linksMap = JSON.parse(fs.readFileSync(path.join(RESULTS_DIR, 'links.json'), 'utf8'));
+    console.log('📎 links.json:', JSON.stringify(linksMap));
+  } catch {
+    console.log('📎 links.json not found, will fallback to upload_output.txt');
+  }
+
+  function findReportUrl(pageUrl) {
+    const norm = normalizeUrl(pageUrl);
+    // links.json keys may include suffix like " (desktop)"
+    for (const [key, val] of Object.entries(linksMap)) {
+      if (normalizeUrl(key) === norm || key.startsWith(pageUrl) || key.startsWith(norm)) {
+        return val;
+      }
+    }
+    // Fallback: try upload_output.txt
+    try {
+      const output = fs.readFileSync('upload_output.txt', 'utf8');
+      const allUrls = [...output.matchAll(/https:\/\/storage\.googleapis\.com\/\S+\.html/g)].map(m => m[0]);
+      if (allUrls.length === 1) return allUrls[0];
+    } catch {}
+    return '';
+  }
 
   const pages = [];
   let hasFailed = false;
@@ -82,9 +109,7 @@ function parse() {
       return { key: def.key, label: def.label, score, threshold: t, pass: score >= t };
     });
 
-    // Collect all report URLs for this page's runs, pick one
-    const pageReportUrls = group.indices.map(i => reportUrls[i]).filter(Boolean);
-    const reportUrl = pageReportUrls[Math.floor(pageReportUrls.length / 2)] || '';
+    const reportUrl = findReportUrl(url);
 
     const failed = metrics.filter(m => !m.pass);
     if (failed.length > 0) hasFailed = true;

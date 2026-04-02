@@ -24,11 +24,31 @@ for (const page of pages) {
   pageScores[page.name] = scores;
 }
 
+// Build migration map: old shortUrl keys → current displayName
+const migrationMap = {};
+for (const [fullUrl, name] of Object.entries(require('../lighthouserc.js').pageNames || {})) {
+  try {
+    const u = new URL(fullUrl);
+    const oldKey = u.pathname === '/' ? u.hostname : u.hostname + u.pathname;
+    migrationMap[oldKey] = name;
+  } catch {}
+}
+
 const scoresFile = path.join(deployDir, 'scores.json');
 let history = [];
 try {
   history = JSON.parse(fs.readFileSync(scoresFile, 'utf8'));
 } catch {}
+
+// Migrate old page-name keys in historical entries
+for (const entry of history) {
+  if (!entry.pages) continue;
+  const migrated = {};
+  for (const [key, val] of Object.entries(entry.pages)) {
+    migrated[migrationMap[key] || key] = val;
+  }
+  entry.pages = migrated;
+}
 
 history.push({
   date: new Date().toISOString(),
