@@ -49,5 +49,30 @@
       "best-practices": 90,
       "seo": 90
     }
+  },
+  {
+    "date": "2026-04-02T01:48:32.899Z",
+    "commit": "1ce2728",
+    "trigger": "push",
+    "pages": {
+      "esimnum.com": {
+        "performance": 100,
+        "accessibility": 95,
+        "best-practices": 100,
+        "seo": 92
+      },
+      "esimnum.com/destinations/esim-united-states/US": {
+        "performance": 100,
+        "accessibility": 92,
+        "best-practices": 74,
+        "seo": 92
+      }
+    },
+    "thresholds": {
+      "performance": 90,
+      "accessibility": 90,
+      "best-practices": 90,
+      "seo": 90
+    }
   }
 ]
