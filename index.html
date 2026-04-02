@@ -300,10 +300,10 @@ function renderChart(pageName) {
     fill: false,
   }));
 
-  // Dynamic Y-axis: floor to nearest 10 below the lowest score, capped at 0
   const allValues = datasets.flatMap(ds => ds.data).filter(v => v != null);
   const minVal = allValues.length ? Math.min(...allValues) : 0;
   const yMin = Math.max(0, Math.floor(minVal / 10) * 10 - 10);
+  const yMax = 105;
 
   if (chartInstance) chartInstance.destroy();
 
@@ -343,8 +343,8 @@ function renderChart(pageName) {
           grid: { color: '#1e293b' },
         },
         y: {
-          min: yMin, max: 100,
-          ticks: { color: '#64748b', stepSize: 5, callback: v => v + ' 分' },
+          min: yMin, max: yMax,
+          ticks: { color: '#64748b', stepSize: 5 },
           grid: { color: '#334155' },
         },
       },
