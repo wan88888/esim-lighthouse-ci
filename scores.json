@@ -55,13 +55,13 @@
     "commit": "1ce2728",
     "trigger": "push",
     "pages": {
-      "esimnum.com": {
+      "主页": {
         "performance": 100,
         "accessibility": 95,
         "best-practices": 100,
         "seo": 92
       },
-      "esimnum.com/destinations/esim-united-states/US": {
+      "套餐页": {
         "performance": 100,
         "accessibility": 92,
         "best-practices": 74,
@@ -80,7 +80,32 @@
     "commit": "887874d",
     "trigger": "push",
     "pages": {
-      "esimnum.com": {
+      "主页": {
+        "performance": 100,
+        "accessibility": 95,
+        "best-practices": 100,
+        "seo": 92
+      },
+      "套餐页": {
+        "performance": 100,
+        "accessibility": 92,
+        "best-practices": 74,
+        "seo": 92
+      }
+    },
+    "thresholds": {
+      "performance": 90,
+      "accessibility": 90,
+      "best-practices": 90,
+      "seo": 90
+    }
+  },
+  {
+    "date": "2026-04-02T03:22:55.452Z",
+    "commit": "454c19b",
+    "trigger": "push",
+    "pages": {
+      "主页": {
         "performance": 100,
         "accessibility": 95,
         "best-practices": 100,
