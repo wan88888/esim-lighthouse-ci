@@ -21,7 +21,7 @@ const pageScores = {};
 for (const page of pages) {
   const scores = {};
   for (const m of page.metrics) scores[m.key] = m.score;
-  pageScores[page.shortUrl] = scores;
+  pageScores[page.name] = scores;
 }
 
 const scoresFile = path.join(deployDir, 'scores.json');

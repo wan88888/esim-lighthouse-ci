@@ -1,17 +1,19 @@
 # eSIM Lighthouse CI
 
-[esimnum.com](https://esimnum.com) 网站性能监控项目，基于 Google Lighthouse CI，自动检测 Performance、Accessibility、Best Practices、SEO 四项指标，不达标时通过飞书机器人告警并 @对应研发。
+[esimnum.com](https://esimnum.com) 网站性能监控项目，基于 Google Lighthouse CI，自动检测多个页面的 Performance、Accessibility、Best Practices、SEO 四项指标，不达标时通过飞书机器人告警并 @对应研发，同时提供历史趋势看板。
 
 ## 项目结构
 
 ```
-├── .github/workflows/lighthouse.yml   # GitHub Actions 工作流（纯编排）
+├── .github/workflows/lighthouse.yml   # GitHub Actions 工作流
 ├── scripts/
-│   ├── notify-feishu.js               # 分数解析 + 飞书通知
-│   └── save-scores.js                 # 历史分数持久化
+│   ├── lib/
+│   │   └── lhr-parser.js              # 公共模块：按页面分组解析 LHR 结果
+│   ├── notify-feishu.js               # 分数解析 + 飞书通知（含变化量对比）
+│   └── save-scores.js                 # 历史分数持久化（按页面存储）
 ├── dashboard/
-│   └── index.html                     # 趋势看板（部署到 gh-pages）
-├── lighthouserc.js                    # Lighthouse CI 配置（阈值单一数据源）
+│   └── index.html                     # 趋势看板（部署到 gh-pages，支持多页面切换）
+├── lighthouserc.js                    # Lighthouse CI 配置（阈值 + 页面名称映射）
 ├── package.json
 └── package-lock.json
 ```
@@ -29,24 +31,31 @@ npm test
 
 ### 测试目标与阈值（lighthouserc.js）
 
-所有阈值配置集中在 `lighthouserc.js`，通知脚本自动读取，只需维护一处：
+所有配置集中在 `lighthouserc.js`，通知脚本和趋势看板自动读取，只需维护一处：
 
 ```javascript
 module.exports = {
+  pageNames: {
+    'https://esimnum.com': '主页',
+    'https://esimnum.com/destinations/esim-united-states/US': '套餐页',
+  },
   ci: {
     collect: {
-      url: ['https://esimnum.com'],    // 测试 URL
-      numberOfRuns: 1,                  // 单次运行，趋势图自然平滑噪声
+      url: [
+        'https://esimnum.com',
+        'https://esimnum.com/destinations/esim-united-states/US',
+      ],
+      numberOfRuns: 3,                    // 每页跑 3 次取中位数，减少波动
       settings: {
-        preset: 'desktop',              // 桌面端模式
+        preset: 'desktop',               // 桌面端模式
       },
     },
     assert: {
       assertions: {
-        'categories:performance':    ['error', { minScore: 0.95 }],  // ≥ 95 分
-        'categories:accessibility':  ['error', { minScore: 0.95 }],  // ≥ 95 分
-        'categories:best-practices': ['error', { minScore: 0.95 }],  // ≥ 95 分
-        'categories:seo':            ['error', { minScore: 1 }],     // = 100 分
+        'categories:performance':    ['warn', { minScore: 0.9 }],  // ≥ 90 分
+        'categories:accessibility':  ['warn', { minScore: 0.9 }],  // ≥ 90 分
+        'categories:best-practices': ['warn', { minScore: 0.9 }],  // ≥ 90 分
+        'categories:seo':            ['warn', { minScore: 0.9 }],  // ≥ 90 分
       },
     },
     upload: {
@@ -55,6 +64,12 @@ module.exports = {
   },
 };
 ```
+
+#### 如何添加新页面
+
+1. 在 `ci.collect.url` 数组中添加 URL
+2. 在 `pageNames` 中添加对应的中文名称映射
+3. 无需修改任何脚本，飞书通知和趋势看板自动适配
 
 ### GitHub Actions 触发方式
 
@@ -93,42 +108,75 @@ const MENTION_CONTACTS = [
 
 ## 通知效果
 
-**告警卡片（红色）** — 任一指标不达标时发送：
+飞书卡片按页面分区展示分数，每个页面独立显示四项指标、变化量和报告链接。
+
+**告警卡片（红色）** — 任一页面有指标不达标时发送：
 
 ```
 ⚠️ eSIM Lighthouse CI 告警
 
-🟢 Performance: 100 分（阈值 ≥ 95）
-🟢 Accessibility: 95 分（阈值 ≥ 95）
-🟢 Best Practices: 100 分（阈值 ≥ 95）
-🔴 SEO: 92 分（阈值 = 100）
+📄 主页
+🟢 Performance: 100 分（阈值 ≥ 90）
+🟢 Accessibility: 95 分 🔺+2（阈值 ≥ 90）
+🟢 Best Practices: 100 分（阈值 ≥ 90）
+🟢 SEO: 92 分（阈值 ≥ 90）
+🔗 查看报告
 ───────────────────────────────
-❌ 不达标指标: SEO(92分)
-@张三 请及时检查代码！
+📄 套餐页
+🟢 Performance: 100 分（阈值 ≥ 90）
+🟢 Accessibility: 92 分（阈值 ≥ 90）
+🔴 Best Practices: 74 分 🔻-5（阈值 ≥ 90）
+🟢 SEO: 92 分（阈值 ≥ 90）
+🔗 查看报告
+───────────────────────────────
+❌ 不达标指标:
+套餐页 — Best Practices(74分)
+@所有人 请及时检查代码！
+
+⏰ 构建时间: 2026/04/02 09:48:31
+
+[📈 查看趋势图]
 ```
 
-**正常卡片（绿色）** — 全部达标时发送：
+**正常卡片（绿色）** — 所有页面全部达标时发送：
 
 ```
 ✅ eSIM Lighthouse CI 报告
 
-🟢 Performance: 100 分（阈值 ≥ 95）
-🟢 Accessibility: 97 分（阈值 ≥ 95）
-🟢 Best Practices: 100 分（阈值 ≥ 95）
-🟢 SEO: 100 分（阈值 = 100）
+📄 主页
+🟢 Performance: 100 分（阈值 ≥ 90）
+🟢 Accessibility: 97 分 🔺+2（阈值 ≥ 90）
+🟢 Best Practices: 100 分（阈值 ≥ 90）
+🟢 SEO: 100 分（阈值 ≥ 90）
+🔗 查看报告
 ───────────────────────────────
-🎉 所有指标均达标，表现优秀！
+📄 套餐页
+🟢 Performance: 98 分（阈值 ≥ 90）
+🟢 Accessibility: 95 分（阈值 ≥ 90）
+🟢 Best Practices: 92 分 🔺+3（阈值 ≥ 90）
+🟢 SEO: 100 分（阈值 ≥ 90）
+🔗 查看报告
+───────────────────────────────
+🎉 所有页面指标均达标，表现优秀！
+
+[📈 查看趋势图]
 ```
+
+通知特性：
+- 每个页面独立展示四项分数和对应的在线报告链接
+- 分数变化量用 🔺/🔻 标识，与上次运行对比
+- 不达标指标按页面分组列出
+- 底部趋势图按钮跳转 GitHub Pages 看板
 
 ## 趋势看板
 
-每次 CI 运行后，分数自动追加到 `gh-pages` 分支的 `scores.json`，通过 GitHub Pages 托管的静态页面展示历史趋势图。
+每次 CI 运行后，分数按页面自动追加到 `gh-pages` 分支的 `scores.json`，通过 GitHub Pages 托管的静态页面展示历史趋势。
 
 **访问地址**：`https://<用户名>.github.io/esim-lighthouse-ci/`
 
-看板展示内容：
+看板功能：
+- 顶部 Tab 切换不同页面（主页 / 套餐页）
 - 四项指标的历史趋势折线图
-- 阈值参考虚线
 - 最近一次运行的分数卡片（通过/不通过状态）
 - 保留最近 100 次运行数据
 
@@ -136,6 +184,7 @@ const MENTION_CONTACTS = [
 
 ## 查看报告
 
+- **飞书通知**：每个页面的「查看报告」链接可直接跳转对应的 Lighthouse 在线报告
 - **趋势看板**：GitHub Pages 上的历史趋势图，永久保存
 - **GitHub Actions Summary**：每次运行后在 Summary 页显示分数表格和报告链接
 - **在线报告**：上传至 Google 临时公共存储，有效期约 7 天，支持直接分享
@@ -150,6 +199,7 @@ const MENTION_CONTACTS = [
 | 飞书未收到通知 | 检查 `FEISHU_WEBHOOK_URL` secret 是否配置正确 |
 | @提醒不生效 | 检查 `MENTION_CONTACTS` 数组中的 Open ID 是否正确 |
 | 趋势看板空白 | 确认 GitHub Pages 已启用，Source 设为 `gh-pages` 分支 |
+| 新增页面后通知/看板没显示 | 检查 `lighthouserc.js` 中 `url` 和 `pageNames` 是否都已添加 |
 
 ## 相关资源
 

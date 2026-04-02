@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="refresh" content="300">
 <title>eSIM Lighthouse CI - 趋势看板</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <style>
@@ -87,6 +88,14 @@
     color: #64748b;
     margin-top: 4px;
   }
+  .card .delta {
+    font-size: 0.75rem;
+    margin-top: 4px;
+    font-weight: 600;
+  }
+  .delta-up { color: #34d399; }
+  .delta-down { color: #f87171; }
+  .delta-flat { color: #64748b; }
   .card .status {
     display: inline-block;
     margin-top: 6px;
@@ -189,29 +198,25 @@ async function init() {
   renderMeta();
 }
 
-/** Collect all unique page names across all entries, compatible with old format */
+/** Collect all unique page names across entries, skipping legacy "default" */
 function getPageNames() {
   const nameSet = new Set();
   for (const entry of rawData) {
     if (entry.pages) {
       Object.keys(entry.pages).forEach(k => nameSet.add(k));
-    } else if (entry.scores) {
-      nameSet.add('default');
     }
   }
   return [...nameSet];
 }
 
-/** Get scores for a specific page from an entry (backward-compatible) */
+/** Get scores for a specific page from an entry */
 function getPageScores(entry, pageName) {
-  if (entry.pages && entry.pages[pageName]) return entry.pages[pageName];
-  if (pageName === 'default' && entry.scores) return entry.scores;
-  return null;
+  return entry.pages?.[pageName] ?? null;
 }
 
 function renderTabs(pageNames) {
   const container = document.getElementById('tabs');
-  if (pageNames.length <= 1 && pageNames[0] === 'default') {
+  if (pageNames.length <= 1) {
     container.style.display = 'none';
     return;
   }
@@ -237,15 +242,36 @@ function renderCards(latest, pageName) {
   const scores = getPageScores(latest, pageName);
   const container = document.getElementById('cards');
   if (!scores) { container.innerHTML = ''; return; }
+
+  // Find previous entry for delta
+  let prevScores = null;
+  for (let i = rawData.length - 2; i >= 0; i--) {
+    const s = getPageScores(rawData[i], pageName);
+    if (s) { prevScores = s; break; }
+  }
+
   container.innerHTML = METRIC_CONFIG.map(m => {
     const score = scores[m.key] ?? 0;
     const threshold = latest.thresholds?.[m.key] ?? 0;
     const pass = score >= threshold;
     const op = threshold >= 100 ? '=' : '≥';
+
+    let deltaHtml = '';
+    if (prevScores) {
+      const prev = prevScores[m.key];
+      if (prev != null) {
+        const diff = score - prev;
+        if (diff > 0) deltaHtml = `<div class="delta delta-up">▲ +${diff}</div>`;
+        else if (diff < 0) deltaHtml = `<div class="delta delta-down">▼ ${diff}</div>`;
+        else deltaHtml = `<div class="delta delta-flat">— 0</div>`;
+      }
+    }
+
     return `
       <div class="card">
         <div class="label">${m.label}</div>
         <div class="score ${pass ? 'score-green' : 'score-red'}">${score}</div>
+        ${deltaHtml}
         <div class="threshold">Threshold ${op} ${threshold}</div>
         <span class="status ${pass ? 'pass' : 'fail'}">${pass ? 'PASS' : 'FAIL'}</span>
       </div>`;
@@ -274,27 +300,10 @@ function renderChart(pageName) {
     fill: false,
   }));
 
-  const latest = filtered[filtered.length - 1];
-  if (latest?.thresholds) {
-    const grouped = {};
-    for (const m of METRIC_CONFIG) {
-      const t = latest.thresholds[m.key];
-      if (t == null) continue;
-      (grouped[t] ??= []).push(m.label);
-    }
-    for (const [t, names] of Object.entries(grouped)) {
-      datasets.push({
-        label: `${names.join(' / ')} 阈值 (${t} 分)`,
-        data: Array(filtered.length).fill(Number(t)),
-        borderColor: '#475569',
-        borderWidth: 1,
-        borderDash: [6, 4],
-        pointRadius: 0,
-        pointHoverRadius: 0,
-        fill: false,
-      });
-    }
-  }
+  // Dynamic Y-axis: floor to nearest 10 below the lowest score, capped at 0
+  const allValues = datasets.flatMap(ds => ds.data).filter(v => v != null);
+  const minVal = allValues.length ? Math.min(...allValues) : 0;
+  const yMin = Math.max(0, Math.floor(minVal / 10) * 10 - 10);
 
   if (chartInstance) chartInstance.destroy();
 
@@ -323,7 +332,6 @@ function renderChart(pageName) {
                 (d.commit !== 'local' ? `  ·  ${d.commit}` : '');
             },
             label(item) {
-              if (item.dataset.borderDash) return null;
               return ` ${item.dataset.label}: ${item.raw}`;
             },
           },
@@ -335,8 +343,8 @@ function renderChart(pageName) {
           grid: { color: '#1e293b' },
         },
         y: {
-          min: 0, max: 100,
-          ticks: { color: '#64748b', stepSize: 10, callback: v => v + ' 分' },
+          min: yMin, max: 100,
+          ticks: { color: '#64748b', stepSize: 5, callback: v => v + ' 分' },
           grid: { color: '#334155' },
         },
       },

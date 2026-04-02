@@ -3,6 +3,7 @@ const path = require('path');
 
 const config = require('../../lighthouserc.js');
 const assertions = config.ci.assert.assertions;
+const pageNames = config.pageNames || {};
 
 const METRIC_DEFS = [
   { key: 'performance',    label: 'Performance',    assertion: 'categories:performance' },
@@ -23,7 +24,8 @@ function median(arr) {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-function shortUrl(url) {
+function displayName(url) {
+  if (pageNames[url]) return pageNames[url];
   try {
     const u = new URL(url);
     return u.pathname === '/' ? u.hostname : u.hostname + u.pathname;
@@ -37,7 +39,7 @@ function shortUrl(url) {
  * scores, and map each page to its report URL from upload_output.txt.
  *
  * Returns { pages, hasFailed } where pages is an array of:
- *   { url, shortUrl, metrics: [{ key, label, score, threshold, pass }], reportUrl, failed }
+ *   { url, name, metrics: [{ key, label, score, threshold, pass }], reportUrl, failed }
  */
 function parse() {
   const RESULTS_DIR = path.resolve('.lighthouseci');
@@ -80,17 +82,17 @@ function parse() {
       return { key: def.key, label: def.label, score, threshold: t, pass: score >= t };
     });
 
-    // Pick report URL from the median run
-    const midIdx = group.indices[Math.floor(group.indices.length / 2)];
-    const reportUrl = reportUrls[midIdx] || '';
+    // Collect all report URLs for this page's runs, pick one
+    const pageReportUrls = group.indices.map(i => reportUrls[i]).filter(Boolean);
+    const reportUrl = pageReportUrls[Math.floor(pageReportUrls.length / 2)] || '';
 
     const failed = metrics.filter(m => !m.pass);
     if (failed.length > 0) hasFailed = true;
 
-    pages.push({ url, shortUrl: shortUrl(url), metrics, reportUrl, failed });
+    pages.push({ url, name: displayName(url), metrics, reportUrl, failed });
   }
 
   return { pages, hasFailed };
 }
 
-module.exports = { METRIC_DEFS, thresholds, parse, shortUrl };
+module.exports = { METRIC_DEFS, thresholds, parse, displayName };

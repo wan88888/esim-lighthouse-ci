@@ -59,6 +59,7 @@ jobs:
       - name: Analyze Scores & Notify Feishu
         env:
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+          TRIGGER_EVENT: ${{ github.event_name }}
         run: node scripts/notify-feishu.js
 
       - name: Prepare Dashboard Data
