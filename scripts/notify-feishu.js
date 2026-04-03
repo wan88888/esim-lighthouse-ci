@@ -126,8 +126,10 @@ async function sendFeishuNotification() {
       const icon = m.pass ? '🟢' : '🔴';
       const op = m.threshold >= 100 ? '=' : '≥';
       let deltaStr = '';
-      if (m.delta != null && m.delta !== 0) {
-        deltaStr = m.delta > 0 ? ` 🔺+${m.delta}` : ` 🔻${m.delta}`;
+      if (m.delta != null) {
+        if (m.delta > 0) deltaStr = ` 🔺+${m.delta}`;
+        else if (m.delta < 0) deltaStr = ` 🔻${m.delta}`;
+        else deltaStr = ' ➖0';
       }
       return `${icon} **${m.label}**: ${m.score} 分${deltaStr}（阈值 ${op} ${m.threshold}）`;
     }).join('\n');

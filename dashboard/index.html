@@ -137,7 +137,7 @@
 <body>
 
 <div class="header">
-  <h1>eSIM Lighthouse CI</h1>
+  <h1>eSIM 网站性能监控</h1>
   <p id="subtitle">Loading...</p>
 </div>
 
@@ -157,10 +157,10 @@
 
 <script>
 const METRIC_CONFIG = [
-  { key: 'performance',    label: 'Performance',    color: '#f97316' },
-  { key: 'accessibility',  label: 'Accessibility',  color: '#3b82f6' },
-  { key: 'best-practices', label: 'Best Practices', color: '#a855f7' },
-  { key: 'seo',            label: 'SEO',            color: '#22c55e' },
+  { key: 'performance',    label: 'Performance',    color: '#f97316', pointStyle: 'circle',   dash: [] },
+  { key: 'accessibility',  label: 'Accessibility',  color: '#3b82f6', pointStyle: 'triangle', dash: [] },
+  { key: 'best-practices', label: 'Best Practices', color: '#a855f7', pointStyle: 'rect',     dash: [6, 3] },
+  { key: 'seo',            label: 'SEO',            color: '#22c55e', pointStyle: 'star',     dash: [2, 2] },
 ];
 
 let rawData = [];
@@ -294,8 +294,10 @@ function renderChart(pageName) {
     borderColor: m.color,
     backgroundColor: m.color + '1a',
     borderWidth: 2,
-    pointRadius: filtered.length > 30 ? 0 : 3,
-    pointHoverRadius: 5,
+    borderDash: m.dash,
+    pointStyle: m.pointStyle,
+    pointRadius: filtered.length > 30 ? 0 : 4,
+    pointHoverRadius: 6,
     tension: 0.3,
     fill: false,
   }));
@@ -315,7 +317,7 @@ function renderChart(pageName) {
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: {
-          labels: { color: '#94a3b8', usePointStyle: true, pointStyle: 'circle', padding: 16 },
+          labels: { color: '#94a3b8', usePointStyle: true, padding: 16 },
         },
         tooltip: {
           backgroundColor: '#1e293b',
