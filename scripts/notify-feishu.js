@@ -154,11 +154,11 @@ async function sendFeishuNotification() {
       })
       .join('\n');
 
-    let mention = '<at id=all>所有人</at>';
+    alertText = `❌ **不达标指标**:\n${failedByPage}\n请关注并排查原因`;
     if (MENTION_CONTACTS.length > 0) {
-      mention = MENTION_CONTACTS.map(u => `<at id=${u.id}>${u.name}</at>`).join(' ');
+      const mention = MENTION_CONTACTS.map(u => `<at id=${u.id}>${u.name}</at>`).join(' ');
+      alertText += `\n${mention}`;
     }
-    alertText = `❌ **不达标指标**:\n${failedByPage}\n${mention} 请关注并排查原因`;
   } else {
     alertText = '🎉 所有页面指标均达标，表现优秀！';
   }
