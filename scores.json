@@ -999,5 +999,30 @@
       "best-practices": 90,
       "seo": 90
     }
+  },
+  {
+    "date": "2026-11-18T03:50:40.974Z",
+    "commit": "0771255",
+    "trigger": "schedule",
+    "pages": {
+      "主页": {
+        "performance": 100,
+        "accessibility": 96,
+        "best-practices": 100,
+        "seo": 100
+      },
+      "套餐页": {
+        "performance": 100,
+        "accessibility": 97,
+        "best-practices": 100,
+        "seo": 100
+      }
+    },
+    "thresholds": {
+      "performance": 90,
+      "accessibility": 90,
+      "best-practices": 90,
+      "seo": 90
+    }
   }
 ]
